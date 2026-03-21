@@ -21,10 +21,13 @@ export class WalletService {
       return existing;
     }
 
+    const initialUsdBalance = Number(this.configService.get('INITIAL_USD_BALANCE', '0'));
+    const initialIgcBalance = Number(this.configService.get('INITIAL_IGC_BALANCE', '0'));
+
     return this.walletModel.create({
       userId: new Types.ObjectId(userId),
-      usdBalance: 500,
-      igcBalance: 1250,
+      usdBalance: initialUsdBalance,
+      igcBalance: initialIgcBalance,
     });
   }
 

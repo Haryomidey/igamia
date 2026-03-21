@@ -1,34 +1,53 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Filter, Users, Star, Clock, TrendingUp, X, DollarSign } from 'lucide-react';
+import { Search, Filter, Users, Star, Clock, TrendingUp, X, DollarSign, PlusCircle, Swords, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSearchParams } from 'react-router-dom';
 import { useGames, type Game } from '../../../hooks/useGames';
 import { usePledges, type MatchActivity } from '../../../hooks/usePledges';
 import { useWallet } from '../../../hooks/useWallet';
 import { useToast } from '../../../components/ToastProvider';
+import { useAuth } from '../../../hooks/useAuth';
+
+type PledgeMode = 'join' | 'create';
 
 export default function GameLibrary() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedMatch, setSelectedMatch] = useState<MatchActivity | null>(null);
+  const [selectedGameForCreate, setSelectedGameForCreate] = useState<Game | null>(null);
+  const [pledgeMode, setPledgeMode] = useState<PledgeMode>('join');
   const [betAmount, setBetAmount] = useState('');
   const [isBetting, setIsBetting] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    title: '',
+    scheduledFor: '',
+    minimumStakeUsd: '10',
+    maxPlayers: '2',
+  });
   const toast = useToast();
+  const { user } = useAuth();
 
   const { games, loading: gamesLoading, error: gamesError } = useGames({
     search,
     popular: activeTab === 'popular' ? true : undefined,
     featured: activeTab === 'featured' ? true : undefined,
   });
-  const { activities, loading: pledgesLoading, error: pledgesError, placePledge } = usePledges(true);
+  const {
+    activities,
+    loading: pledgesLoading,
+    error: pledgesError,
+    placePledge,
+    joinMatch,
+    createMatch,
+  } = usePledges(true);
   const { walletData } = useWallet(true);
 
   const tabs = [
     { id: 'all', label: 'All Games' },
     { id: 'popular', label: 'Popular' },
     { id: 'featured', label: 'Featured' },
-    { id: 'coop', label: 'Co-op Pledges' },
+    { id: 'active', label: 'Active Pledges' },
   ];
 
   const matchesByGameId = useMemo(() => {
@@ -40,8 +59,11 @@ export default function GameLibrary() {
   }, [activities]);
 
   const visibleGames = useMemo(() => {
-    const source = activeTab === 'coop' ? games.filter((game) => matchesByGameId[game._id]?.length) : games;
-    return source;
+    if (activeTab === 'active') {
+      return games.filter((game) => matchesByGameId[game._id]?.length);
+    }
+
+    return games;
   }, [activeTab, games, matchesByGameId]);
 
   useEffect(() => {
@@ -52,8 +74,7 @@ export default function GameLibrary() {
 
     const matchingActivity = activities.find((item) => item._id === matchId);
     if (matchingActivity) {
-      setSelectedMatch(matchingActivity);
-      setBetAmount(String(matchingActivity.minimumStakeUsd));
+      openJoinPledge(matchingActivity);
     }
   }, [activities, searchParams]);
 
@@ -64,29 +85,67 @@ export default function GameLibrary() {
     }
   }, [gamesError, pledgesError, toast]);
 
+  const clearMatchQuery = () => {
+    if (searchParams.get('matchId')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('matchId');
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
+
+  const closePledgeModal = () => {
+    setSelectedMatch(null);
+    setSelectedGameForCreate(null);
+    setBetAmount('');
+    setPledgeMode('join');
+    clearMatchQuery();
+  };
+
+  const openJoinPledge = (match: MatchActivity) => {
+    setPledgeMode('join');
+    setSelectedMatch(match);
+    setSelectedGameForCreate(null);
+    setBetAmount(String(match.minimumStakeUsd));
+  };
+
+  const openCreatePledge = (game: Game) => {
+    const defaultDate = new Date(Date.now() + 60 * 60 * 1000);
+    setPledgeMode('create');
+    setSelectedGameForCreate(game);
+    setSelectedMatch(null);
+    setCreateForm({
+      title: `${game.title} Live Challenge`,
+      scheduledFor: defaultDate.toISOString().slice(0, 16),
+      minimumStakeUsd: '10',
+      maxPlayers: '2',
+    });
+  };
+
   const handleOpenPledge = (game: Game) => {
-    const match = matchesByGameId[game._id]?.[0];
-    if (!match) {
-      toast.info(`No live pledge activity is available for ${game.title} right now.`);
+    const match = matchesByGameId[game._id]?.find((item) => item.status === 'open');
+    if (match) {
+      openJoinPledge(match);
       return;
     }
 
-    setSelectedMatch(match);
-    setBetAmount(String(match.minimumStakeUsd));
+    openCreatePledge(game);
   };
 
   const handleBet = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedMatch) {
+    if (!selectedMatch || !user?._id) {
       return;
     }
 
     try {
       setIsBetting(true);
+      const isParticipant = selectedMatch.participants.some((participant) => participant.userId === user._id);
+      if (!isParticipant) {
+        await joinMatch(selectedMatch._id);
+      }
       await placePledge(selectedMatch._id, Number(betAmount));
-      toast.success(`Stake placed successfully for ${selectedMatch.title}.`);
-      setSelectedMatch(null);
-      setBetAmount('');
+      toast.success(`Pledge joined successfully for ${selectedMatch.title}.`);
+      closePledgeModal();
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to place stake.');
     } finally {
@@ -94,13 +153,41 @@ export default function GameLibrary() {
     }
   };
 
+  const handleCreatePledge = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedGameForCreate) {
+      return;
+    }
+
+    try {
+      setIsBetting(true);
+      const createdMatch = await createMatch({
+        gameId: selectedGameForCreate._id,
+        title: createForm.title.trim(),
+        scheduledFor: new Date(createForm.scheduledFor).toISOString(),
+        minimumStakeUsd: Number(createForm.minimumStakeUsd),
+        maxPlayers: Number(createForm.maxPlayers),
+      });
+      toast.success('Pledge created. Other players can now join you live.');
+      setPledgeMode('join');
+      setSelectedGameForCreate(null);
+      openJoinPledge(createdMatch);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to create pledge.');
+    } finally {
+      setIsBetting(false);
+    }
+  };
+
+  const activeOpenActivities = activities.filter((activity) => activity.status === 'open');
+
   return (
     <div className="space-y-12 pb-12">
       <header className="space-y-8">
         <div className="space-y-2">
           <span className="text-[10px] font-black uppercase tracking-[0.4em] text-brand-accent">Discover & Play</span>
           <h1 className="text-5xl font-black tracking-tighter uppercase italic text-white">Game Library</h1>
-          <p className="text-sm text-zinc-500">Games and pledge entries are now backed by the hooks and API.</p>
+          <p className="text-sm text-zinc-500">Start a pledge if none exists, or join an active one and play live with other users.</p>
         </div>
 
         <div className="flex flex-col md:flex-row gap-6">
@@ -136,9 +223,63 @@ export default function GameLibrary() {
         </div>
       </header>
 
+      <section className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-black text-white uppercase italic">Active Pledges</h2>
+          <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+            {activeOpenActivities.length} open
+          </span>
+        </div>
+
+        {activeOpenActivities.length ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {activeOpenActivities.slice(0, 6).map((activity) => (
+              <div key={activity._id} className="rounded-[2.5rem] border border-white/10 bg-white/5 p-8 space-y-5">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="rounded-full bg-brand-primary/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-brand-primary">
+                    {activity.mode}
+                  </span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                    {activity.participants.length}/{activity.maxPlayers} players
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-xl font-black uppercase italic text-white">{activity.gameTitle}</h3>
+                  <p className="mt-2 text-sm text-zinc-400">{activity.title}</p>
+                </div>
+                <div className="space-y-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                  <div className="flex items-center gap-2">
+                    <Calendar size={12} className="text-brand-primary" />
+                    {new Date(activity.scheduledFor).toLocaleString()}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <DollarSign size={12} className="text-brand-accent" />
+                    Minimum ${activity.minimumStakeUsd} • Pool ${activity.prizePool.toLocaleString()}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Users size={12} className="text-brand-primary" />
+                    Host: {activity.hostUsername}
+                  </div>
+                </div>
+                <button
+                  onClick={() => openJoinPledge(activity)}
+                  className="w-full rounded-2xl bg-brand-primary px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-brand-accent hover:text-black"
+                >
+                  Join Active Pledge
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[3rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
+            No open pledges yet. Pick a game below and start one.
+          </div>
+        )}
+      </section>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
         {visibleGames.map((game, i) => {
-          const primaryMatch = matchesByGameId[game._id]?.[0];
+          const primaryMatch = matchesByGameId[game._id]?.find((item) => item.status === 'open');
           return (
             <motion.div
               key={game._id}
@@ -170,22 +311,22 @@ export default function GameLibrary() {
                 </div>
                 <h3 className="mb-3 text-xl font-black text-white uppercase italic leading-tight">{game.title}</h3>
                 <p className="mb-6 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                  {primaryMatch ? `${primaryMatch.participants.length}/${primaryMatch.maxPlayers} players joined` : `${game.liveStreams ?? 0} live streams`}
+                  {primaryMatch
+                    ? `${primaryMatch.participants.length}/${primaryMatch.maxPlayers} players ready to go live`
+                    : 'No active pledge yet. Start one now.'}
                 </p>
                 <div className="flex gap-4">
                   <button
                     onClick={() => handleOpenPledge(game)}
-                    className="flex-1 bg-brand-primary text-white py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-brand-accent hover:text-black transition-all shadow-lg shadow-brand-primary/20 disabled:opacity-60"
-                    disabled={!primaryMatch}
+                    className="flex-1 bg-brand-primary text-white py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-brand-accent hover:text-black transition-all shadow-lg shadow-brand-primary/20"
                   >
-                    {primaryMatch ? `Pledge $${primaryMatch.minimumStakeUsd}` : 'No Open Pledge'}
+                    {primaryMatch ? 'Join Pledge' : 'Start Pledge'}
                   </button>
                   <button
-                    onClick={() => primaryMatch && handleOpenPledge(game)}
-                    className="w-14 h-14 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-brand-primary/10 text-brand-primary transition-all disabled:opacity-40"
-                    disabled={!primaryMatch}
+                    onClick={() => (primaryMatch ? openJoinPledge(primaryMatch) : openCreatePledge(game))}
+                    className="w-14 h-14 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-brand-primary/10 text-brand-primary transition-all"
                   >
-                    <TrendingUp size={20} />
+                    {primaryMatch ? <Swords size={20} /> : <PlusCircle size={20} />}
                   </button>
                 </div>
               </div>
@@ -200,34 +341,8 @@ export default function GameLibrary() {
         </div>
       )}
 
-      <section className="bg-brand-primary/10 rounded-[3rem] p-12 border border-brand-primary/20 relative overflow-hidden group">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-brand-primary/10 blur-[100px] rounded-full -translate-y-1/2 translate-x-1/2" />
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-12 relative z-10">
-          <div className="space-y-6 text-center lg:text-left">
-            <h2 className="text-4xl font-black tracking-tighter uppercase italic text-white">CO-OP CHALLENGE</h2>
-            <p className="text-zinc-400 max-w-md text-sm leading-relaxed">
-              Open match activity now comes from the pledge hook, so the available stake flows reflect real backend data.
-            </p>
-            <div className="flex flex-wrap justify-center lg:justify-start gap-6">
-              <div className="flex items-center gap-3 text-xs font-black text-white uppercase tracking-widest">
-                <Clock size={20} className="text-brand-primary" /> {activities[0] ? new Date(activities[0].scheduledFor).toLocaleString() : 'Awaiting next match'}
-              </div>
-              <div className="flex items-center gap-3 text-xs font-black text-white uppercase tracking-widest">
-                <Users size={20} className="text-brand-primary" /> {activities[0]?.participants.length ?? 0} Joined
-              </div>
-            </div>
-          </div>
-          <button
-            onClick={() => activities[0] ? setSelectedMatch(activities[0]) : toast.warning('No co-op challenge is open right now.')}
-            className="bg-white text-black px-12 py-5 rounded-2xl font-black text-sm uppercase tracking-[0.2em] hover:bg-brand-primary hover:text-white transition-all shadow-2xl shadow-white/5"
-          >
-            Join Co-op
-          </button>
-        </div>
-      </section>
-
       <AnimatePresence>
-        {selectedMatch && (
+        {(selectedMatch || selectedGameForCreate) && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0f0b21]/90 backdrop-blur-md">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -235,47 +350,111 @@ export default function GameLibrary() {
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               className="w-full max-w-md bg-[#1a1635] border border-white/10 rounded-[3rem] p-10 relative shadow-2xl"
             >
-              <button
-                onClick={() => setSelectedMatch(null)}
-                className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors"
-              >
+              <button onClick={closePledgeModal} className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors">
                 <X size={24} />
               </button>
-              <div className="flex flex-col items-center text-center mb-10">
-                <div className="w-24 h-24 rounded-3xl overflow-hidden bg-white/5 border border-white/10 mb-6 p-2">
-                  <img src={`https://picsum.photos/seed/${selectedMatch.gameId}/200/200`} alt={selectedMatch.gameTitle} className="w-full h-full object-cover rounded-2xl" />
-                </div>
-                <h3 className="text-2xl font-black text-white uppercase italic">Stake on {selectedMatch.gameTitle}</h3>
-                <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mt-2">
-                  Minimum stake: ${selectedMatch.minimumStakeUsd} • Prize pool: ${selectedMatch.prizePool.toLocaleString()}
-                </p>
-              </div>
-              <form onSubmit={handleBet} className="space-y-8">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Stake Amount (USD)</label>
-                  <div className="relative">
-                    <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-primary" size={20} />
-                    <input
-                      type="number"
-                      min={selectedMatch.minimumStakeUsd}
-                      step="0.01"
-                      value={betAmount}
-                      onChange={(e) => setBetAmount(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-12 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
-                      required
-                    />
+
+              {pledgeMode === 'join' && selectedMatch && (
+                <>
+                  <div className="flex flex-col items-center text-center mb-10">
+                    <div className="w-24 h-24 rounded-3xl overflow-hidden bg-white/5 border border-white/10 mb-6 p-2">
+                      <img src={`https://picsum.photos/seed/${selectedMatch.gameId}/200/200`} alt={selectedMatch.gameTitle} className="w-full h-full object-cover rounded-2xl" />
+                    </div>
+                    <h3 className="text-2xl font-black text-white uppercase italic">Join {selectedMatch.gameTitle}</h3>
+                    <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mt-2">
+                      Hosted by {selectedMatch.hostUsername} • {selectedMatch.participants.length}/{selectedMatch.maxPlayers} players
+                    </p>
                   </div>
-                  <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest ml-1">Backend minimum applies to this pledge.</p>
-                </div>
-                <button
-                  type="submit"
-                  disabled={isBetting}
-                  className="w-full bg-brand-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-accent hover:text-black transition-all disabled:opacity-50 shadow-lg shadow-brand-primary/20"
-                >
-                  {isBetting ? 'Processing...' : 'Place Stake'}
-                </button>
-              </form>
+                  <form onSubmit={handleBet} className="space-y-8">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Stake Amount (USD)</label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-brand-primary" size={20} />
+                        <input
+                          type="number"
+                          min={selectedMatch.minimumStakeUsd}
+                          step="0.01"
+                          value={betAmount}
+                          onChange={(e) => setBetAmount(e.target.value)}
+                          placeholder="0.00"
+                          className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-12 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                          required
+                        />
+                      </div>
+                      <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest ml-1">
+                        Minimum ${selectedMatch.minimumStakeUsd} • Pool ${selectedMatch.prizePool.toLocaleString()}
+                      </p>
+                    </div>
+                    <button type="submit" disabled={isBetting} className="w-full bg-brand-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-accent hover:text-black transition-all disabled:opacity-50 shadow-lg shadow-brand-primary/20">
+                      {isBetting ? 'Joining...' : 'Join and Pledge'}
+                    </button>
+                  </form>
+                </>
+              )}
+
+              {pledgeMode === 'create' && selectedGameForCreate && (
+                <>
+                  <div className="flex flex-col items-center text-center mb-10">
+                    <div className="w-24 h-24 rounded-3xl overflow-hidden bg-white/5 border border-white/10 mb-6 p-2">
+                      <img src={selectedGameForCreate.thumbnail} alt={selectedGameForCreate.title} className="w-full h-full object-cover rounded-2xl" />
+                    </div>
+                    <h3 className="text-2xl font-black text-white uppercase italic">Start {selectedGameForCreate.title}</h3>
+                    <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest mt-2">
+                      Create a live pledge so other players can join you.
+                    </p>
+                  </div>
+                  <form onSubmit={handleCreatePledge} className="space-y-5">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Pledge Title</label>
+                      <input
+                        value={createForm.title}
+                        onChange={(e) => setCreateForm((current) => ({ ...current, title: e.target.value }))}
+                        className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Start Time</label>
+                      <input
+                        type="datetime-local"
+                        value={createForm.scheduledFor}
+                        onChange={(e) => setCreateForm((current) => ({ ...current, scheduledFor: e.target.value }))}
+                        className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Min Stake</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="0.01"
+                          value={createForm.minimumStakeUsd}
+                          onChange={(e) => setCreateForm((current) => ({ ...current, minimumStakeUsd: e.target.value }))}
+                          className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Players</label>
+                        <input
+                          type="number"
+                          min="2"
+                          max="8"
+                          value={createForm.maxPlayers}
+                          onChange={(e) => setCreateForm((current) => ({ ...current, maxPlayers: e.target.value }))}
+                          className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <button type="submit" disabled={isBetting} className="w-full bg-brand-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-accent hover:text-black transition-all disabled:opacity-50 shadow-lg shadow-brand-primary/20">
+                      {isBetting ? 'Creating...' : 'Create Pledge'}
+                    </button>
+                  </form>
+                </>
+              )}
             </motion.div>
           </div>
         )}

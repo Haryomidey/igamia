@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, clearAccessToken, getAccessToken, setAccessToken } from '../api/axios';
+import { api, clearAccessToken, getAccessToken, getApiErrorMessage, setAccessToken } from '../api/axios';
 
 export type AuthUser = {
   _id: string;
@@ -50,7 +50,7 @@ export function useAuth() {
     } catch (err: any) {
       clearAccessToken();
       setUser(null);
-      setError(err?.response?.data?.message ?? 'Unable to load user');
+      setError(getApiErrorMessage(err, 'Unable to load user'));
       return null;
     } finally {
       setLoading(false);
@@ -65,7 +65,7 @@ export function useAuth() {
       const { data } = await api.post('/auth/register', payload);
       return data;
     } catch (err: any) {
-      const message = err?.response?.data?.message ?? 'Unable to register';
+      const message = getApiErrorMessage(err, 'Unable to register', 'register');
       setError(message);
       throw err;
     } finally {
@@ -83,7 +83,7 @@ export function useAuth() {
       setUser(data.user);
       return data;
     } catch (err: any) {
-      const message = err?.response?.data?.message ?? 'Unable to login';
+      const message = getApiErrorMessage(err, 'Unable to login', 'login');
       setError(message);
       throw err;
     } finally {
@@ -104,7 +104,7 @@ export function useAuth() {
       setUser(data.user);
       return data;
     } catch (err: any) {
-      const message = err?.response?.data?.message ?? 'Unable to verify OTP';
+      const message = getApiErrorMessage(err, 'Unable to verify OTP', 'verify');
       setError(message);
       throw err;
     } finally {
@@ -117,12 +117,12 @@ export function useAuth() {
     setError(null);
 
     try {
-      const { data } = await api.post('/auth/resend-verification', null, {
+      const { data } = await api.post('/auth/resend-verification', {}, {
         params: { email },
       });
       return data;
     } catch (err: any) {
-      const message = err?.response?.data?.message ?? 'Unable to resend verification';
+      const message = getApiErrorMessage(err, 'Unable to resend verification', 'verify');
       setError(message);
       throw err;
     } finally {
@@ -138,7 +138,7 @@ export function useAuth() {
       const { data } = await api.post('/auth/forgot-password', { email });
       return data;
     } catch (err: any) {
-      const message = err?.response?.data?.message ?? 'Unable to start password reset';
+      const message = getApiErrorMessage(err, 'Unable to start password reset', 'forgot-password');
       setError(message);
       throw err;
     } finally {
@@ -158,7 +158,7 @@ export function useAuth() {
       const { data } = await api.post('/auth/reset-password', payload);
       return data;
     } catch (err: any) {
-      const message = err?.response?.data?.message ?? 'Unable to reset password';
+      const message = getApiErrorMessage(err, 'Unable to reset password', 'reset-password');
       setError(message);
       throw err;
     } finally {

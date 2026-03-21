@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Gamepad2 } from 'lucide-react';
+import { ChevronLeft, Eye, EyeOff, Gamepad2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '../../../components/ToastProvider';
 import { useAuth } from '../../../hooks/useAuth';
@@ -42,6 +42,10 @@ export default function Auth({ mode }: AuthProps) {
     confirmPassword: '',
   });
   const [verifyOtp, setVerifyOtp] = useState(['', '', '', '']);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showSignupPassword, setShowSignupPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
 
   const verificationEmail = useMemo(() => {
     if (mode === 'signup') {
@@ -66,6 +70,50 @@ export default function Auth({ mode }: AuthProps) {
       document.getElementById(`otp-${index + 1}`)?.focus();
     }
   };
+
+  const renderPasswordField = ({
+    id,
+    label,
+    value,
+    placeholder,
+    visible,
+    onChange,
+    onToggle,
+  }: {
+    id: string;
+    label: string;
+    value: string;
+    placeholder: string;
+    visible: boolean;
+    onChange: (value: string) => void;
+    onToggle: () => void;
+  }) => (
+    <div className="space-y-1">
+      <label htmlFor={id} className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={visible ? 'text' : 'password'}
+          required
+          minLength={6}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 pr-14 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-3 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+          aria-label={visible ? 'Hide password' : 'Show password'}
+        >
+          {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+    </div>
+  );
 
   const handleSignup = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -212,18 +260,15 @@ export default function Auth({ mode }: AuthProps) {
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={signupForm.password}
-                  onChange={(e) => setSignupForm((current) => ({ ...current, password: e.target.value }))}
-                  placeholder="••••••••"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
-                />
-              </div>
+              {renderPasswordField({
+                id: 'signup-password',
+                label: 'Password',
+                value: signupForm.password,
+                placeholder: '••••••••',
+                visible: showSignupPassword,
+                onChange: (value) => setSignupForm((current) => ({ ...current, password: value })),
+                onToggle: () => setShowSignupPassword((current) => !current),
+              })}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Referral Code (Optional)</label>
                 <input
@@ -285,15 +330,25 @@ export default function Auth({ mode }: AuthProps) {
                     Forgot Password?
                   </button>
                 </div>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={loginForm.password}
-                  onChange={(e) => setLoginForm((current) => ({ ...current, password: e.target.value }))}
-                  placeholder="••••••••"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
-                />
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    required
+                    minLength={6}
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm((current) => ({ ...current, password: e.target.value }))}
+                    placeholder="••••••••"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 pr-14 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowLoginPassword((current) => !current)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-xl text-zinc-500 transition-colors hover:bg-white/5 hover:text-white"
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
               </div>
               <button
                 type="submit"
@@ -451,30 +506,24 @@ export default function Auth({ mode }: AuthProps) {
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">New Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={resetForm.newPassword}
-                  onChange={(e) => setResetForm((current) => ({ ...current, newPassword: e.target.value }))}
-                  placeholder="••••••••"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Confirm Password</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={resetForm.confirmPassword}
-                  onChange={(e) => setResetForm((current) => ({ ...current, confirmPassword: e.target.value }))}
-                  placeholder="••••••••"
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
-                />
-              </div>
+              {renderPasswordField({
+                id: 'reset-new-password',
+                label: 'New Password',
+                value: resetForm.newPassword,
+                placeholder: '••••••••',
+                visible: showResetPassword,
+                onChange: (value) => setResetForm((current) => ({ ...current, newPassword: value })),
+                onToggle: () => setShowResetPassword((current) => !current),
+              })}
+              {renderPasswordField({
+                id: 'reset-confirm-password',
+                label: 'Confirm Password',
+                value: resetForm.confirmPassword,
+                placeholder: '••••••••',
+                visible: showResetConfirmPassword,
+                onChange: (value) => setResetForm((current) => ({ ...current, confirmPassword: value })),
+                onToggle: () => setShowResetConfirmPassword((current) => !current),
+              })}
               <button
                 type="submit"
                 disabled={auth.submitting}

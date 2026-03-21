@@ -43,5 +43,31 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+export const getApiErrorMessage = (
+  error: any,
+  fallbackMessage: string,
+  context?: 'login' | 'register' | 'verify' | 'forgot-password' | 'reset-password',
+) => {
+  const responseMessage = error?.response?.data?.message;
+  if (responseMessage) {
+    return responseMessage;
+  }
+
+  const isNetworkFailure =
+    error?.code === 'ERR_NETWORK' ||
+    error?.message === 'Network Error' ||
+    !error?.response;
+
+  if (isNetworkFailure) {
+    if (context === 'login') {
+      return 'Unable to reach the server. Please check your connection.';
+    }
+
+    return 'Unable to reach the server. Please check your connection.';
+  }
+
+  return fallbackMessage;
+};
+
 export const streamSocketUrl =
   import.meta.env.VITE_STREAM_SOCKET_URL ?? 'http://localhost:4000/streams';
