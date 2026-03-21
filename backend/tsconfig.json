@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2021",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "moduleResolution": "node",
+    "paths": {
+      "@nestjs/*": ["../../igamia-old/backend/node_modules/@nestjs/*"],
+      "mongoose": ["../../igamia-old/backend/node_modules/mongoose"],
+      "class-validator": ["../../igamia-old/backend/node_modules/class-validator"],
+      "class-transformer": ["../../igamia-old/backend/node_modules/class-transformer"],
+      "passport": ["../../igamia-old/backend/node_modules/passport"],
+      "passport-jwt": ["../../igamia-old/backend/node_modules/passport-jwt"],
+      "bcrypt": ["../../igamia-old/backend/node_modules/bcryptjs"],
+      "rxjs": ["../../igamia-old/backend/node_modules/rxjs"],
+      "socket.io": ["../../igamia-old/backend/node_modules/socket.io"]
+    },
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}
