@@ -1,8 +1,11 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { Coins, TrendingUp, Shield, Zap, Info, ArrowRight } from 'lucide-react';
+import { useToast } from '../../../components/ToastProvider';
 
 export default function TokenPage() {
+  const toast = useToast();
+
   return (
     <div className="space-y-12 pb-20">
       <header className="text-center space-y-4 pt-10">
@@ -65,7 +68,7 @@ export default function TokenPage() {
               Mined coins will be convertible 1:1 to the mainnet token upon listing.
             </p>
             <button 
-              onClick={() => alert('Roadmap coming soon! Stay tuned for our Q4 2026 launch.')}
+              onClick={() => toast.info('Roadmap coming soon. Stay tuned for our Q4 2026 launch.')}
               className="w-full bg-brand-primary text-black py-4 rounded-2xl font-bold hover:bg-brand-primary/80 transition-colors flex items-center justify-center gap-2"
             >
               View Roadmap <ArrowRight size={18} />

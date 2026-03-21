@@ -1,7 +1,9 @@
 import React from 'react';
 import { HelpCircle, ChevronRight, MessageSquare, Shield, FileText } from 'lucide-react';
+import { useToast } from '../../../components/ToastProvider';
 
 export default function FAQ() {
+  const toast = useToast();
   const faqs = [
     { q: "What is iGamia?", a: "iGamia is a social gaming platform where you can pledge USD on games, stream your gameplay, and earn rewards." },
     { q: "How do I mine iGamia Coins?", a: "You can mine coins daily by watching featured videos in the 'Mine' section. Each video watched adds to your daily mining progress." },
@@ -36,13 +38,13 @@ export default function FAQ() {
         <p className="text-zinc-500 text-sm">Our support team is available 24/7 to help you with any issues.</p>
         <div className="flex flex-wrap justify-center gap-4">
           <button 
-            onClick={() => alert('Support ticket system coming soon! Please email support@igamia.com')}
+            onClick={() => toast.info('Support ticket system coming soon. Please email support@igamia.com.')}
             className="bg-brand-primary text-black px-8 py-3 rounded-full font-bold hover:bg-brand-primary/80 transition-colors flex items-center gap-2"
           >
             <MessageSquare size={18} /> Contact Support
           </button>
           <button 
-            onClick={() => alert('Documentation coming soon! Check our whitepaper for more details.')}
+            onClick={() => toast.info('Documentation coming soon. Check our whitepaper for more details.')}
             className="bg-zinc-800 text-white px-8 py-3 rounded-full font-bold hover:bg-zinc-700 transition-colors flex items-center gap-2"
           >
             <FileText size={18} /> Documentation
