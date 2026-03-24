@@ -17,6 +17,21 @@ class MatchParticipant {
   joinedAt!: Date;
 }
 
+@Schema({ _id: false })
+class MatchJoinRequest {
+  @Prop({ type: Types.ObjectId, ref: User.name, required: true })
+  userId!: Types.ObjectId;
+
+  @Prop({ required: true })
+  username!: string;
+
+  @Prop({ required: true })
+  amountUsd!: number;
+
+  @Prop({ default: Date.now })
+  requestedAt!: Date;
+}
+
 @Schema({ timestamps: true })
 export class Match {
   @Prop({ type: Types.ObjectId, ref: Game.name, required: true })
@@ -51,6 +66,12 @@ export class Match {
 
   @Prop({ type: [MatchParticipant], default: [] })
   participants!: MatchParticipant[];
+
+  @Prop({ type: [MatchJoinRequest], default: [] })
+  pendingRequests!: MatchJoinRequest[];
+
+  @Prop({ type: Types.ObjectId })
+  streamId?: Types.ObjectId;
 
   @Prop({ default: 'co-op' })
   mode!: string;

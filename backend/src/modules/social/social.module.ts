@@ -17,5 +17,6 @@ import { UsersModule } from '../users/users.module';
   ],
   controllers: [SocialController],
   providers: [SocialService],
+  exports: [SocialService],
 })
 export class SocialModule {}

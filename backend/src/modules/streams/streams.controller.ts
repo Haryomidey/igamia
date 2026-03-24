@@ -1,7 +1,9 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StreamsService } from './streams.service';
+import { StreamsGateway } from './streams.gateway';
 import { StartStreamDto } from './dto/start-stream.dto';
 import { InviteStreamerDto } from './dto/invite-streamer.dto';
 import { CommentStreamDto } from './dto/comment-stream.dto';
@@ -10,7 +12,10 @@ import { SendStreamGiftDto } from './dto/send-stream-gift.dto';
 
 @Controller('streams')
 export class StreamsController {
-  constructor(private readonly streamsService: StreamsService) {}
+  constructor(
+    private readonly streamsService: StreamsService,
+    private readonly streamsGateway: StreamsGateway,
+  ) {}
 
   @Get('active')
   listActiveStreams() {
@@ -23,12 +28,30 @@ export class StreamsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get(':streamId/token')
+  getViewerToken(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string; username: string },
+  ) {
+    return this.streamsService.createViewerToken(streamId, user.sub, user.username);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('start')
   startStream(
     @CurrentUser() user: { sub: string; username: string },
     @Body() dto: StartStreamDto,
   ) {
-    return this.streamsService.startStream(user.sub, user.username, dto);
+    return this.streamsService.startStream(user.sub, user.username, dto).then(async (stream) => {
+      const followerIds = await this.streamsService.getFollowerIds(user.sub);
+      this.streamsGateway.emitFollowerLiveNotification(followerIds, {
+        streamId: stream._id.toString(),
+        hostUserId: user.sub,
+        hostUsername: user.username,
+        title: stream.title,
+      });
+      return stream;
+    });
   }
 
   @UseGuards(JwtAuthGuard)
@@ -39,37 +62,90 @@ export class StreamsController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':streamId/invite')
-  inviteStreamer(
+  async inviteStreamer(
     @Param('streamId') streamId: string,
     @CurrentUser() user: { sub: string },
     @Body() dto: InviteStreamerDto,
   ) {
-    return this.streamsService.inviteStreamer(streamId, user.sub, dto);
+    const result = await this.streamsService.inviteStreamer(streamId, user.sub, dto);
+    this.streamsGateway.server.to(streamId).emit('streamerInvited', result);
+    this.streamsGateway.emitStreamInviteNotification(dto.streamerUserId, {
+      streamId,
+      hostUserId: user.sub,
+      hostUsername: result.stream.participants.find((participant: { role: string; username: string }) => participant.role === 'host')?.username ?? 'Host',
+      title: result.stream.title,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/accept-invite')
+  async acceptInvite(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    const result = await this.streamsService.acceptInvite(streamId, user.sub);
+    this.streamsGateway.server.to(streamId).emit('streamParticipantUpdated', {
+      streamId,
+      participants: result.stream.participants,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/leave')
+  async leaveStream(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    const result = await this.streamsService.leaveStream(streamId, user.sub);
+    this.streamsGateway.server.to(streamId).emit('streamParticipantRemoved', {
+      streamId,
+      removedUserId: result.removedUserId,
+      removedUsername: result.removedUsername,
+      reason: result.reason,
+      participants: result.stream.participants,
+    });
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':streamId/share')
-  shareStream(@Param('streamId') streamId: string) {
-    return this.streamsService.shareStream(streamId);
+  async shareStream(@Param('streamId') streamId: string) {
+    const result = await this.streamsService.shareStream(streamId);
+    this.streamsGateway.server.to(streamId).emit('streamShared', {
+      streamId,
+      sharesCount: result.sharesCount,
+    });
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':streamId/like')
-  likeStream(
+  async likeStream(
     @Param('streamId') streamId: string,
     @CurrentUser() user: { sub: string; username: string },
   ) {
-    return this.streamsService.likeStream(streamId, user.sub, user.username);
+    const result = await this.streamsService.likeStream(streamId, user.sub, user.username);
+    this.streamsGateway.server.to(streamId).emit('streamLiked', {
+      streamId,
+      likesCount: result.likesCount,
+      likedBy: user.username,
+      likerCount: result.likerCount,
+    });
+    return result;
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':streamId/comments')
-  commentOnStream(
+  async commentOnStream(
     @Param('streamId') streamId: string,
     @CurrentUser() user: { sub: string; username: string },
     @Body() dto: CommentStreamDto,
   ) {
-    return this.streamsService.commentOnStream(streamId, user.sub, user.username, dto);
+    const comment = await this.streamsService.commentOnStream(streamId, user.sub, user.username, dto);
+    this.streamsGateway.server.to(streamId).emit('streamCommented', comment);
+    return comment;
   }
 
   @UseGuards(JwtAuthGuard)
@@ -83,12 +159,65 @@ export class StreamsController {
   }
 
   @UseGuards(JwtAuthGuard)
-  @Post(':streamId/gift')
-  giftStream(
+  @Post(':streamId/remove-participant')
+  async removeParticipant(
     @Param('streamId') streamId: string,
     @CurrentUser() user: { sub: string },
+    @Body() dto: { participantUserId: string },
+  ) {
+    const result = await this.streamsService.removeParticipant(streamId, user.sub, dto.participantUserId);
+    this.streamsGateway.server.to(streamId).emit('streamParticipantRemoved', {
+      streamId,
+      removedUserId: result.removedUserId,
+      removedUsername: result.removedUsername,
+      reason: result.reason,
+      participants: result.stream.participants,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/gift')
+  async giftStream(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string; username: string },
     @Body() dto: SendStreamGiftDto,
   ) {
-    return this.streamsService.giftStream(streamId, user.sub, dto);
+    const result = await this.streamsService.giftStream(streamId, user.sub, dto);
+    this.streamsGateway.server.to(streamId).emit('streamGifted', {
+      streamId,
+      amount: dto.amount,
+      giftedBy: user.username,
+      creditedAmount: result.creditedAmount,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/recording')
+  saveRecording(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+    @Req() req: Request,
+    @Body()
+    body: {
+      fileName?: string;
+      mimeType?: string;
+      base64Data: string;
+      durationSeconds?: number;
+    },
+  ) {
+    const protocol = req.headers['x-forwarded-proto']?.toString().split(',')[0] || req.protocol;
+    const host = req.get('host') || 'localhost:4000';
+    return this.streamsService.saveRecording(streamId, user.sub, {
+      ...body,
+      baseUrl: `${protocol}://${host}`,
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/recordings')
+  getMyRecordings(@CurrentUser() user: { sub: string }) {
+    return this.streamsService.listRecordedStreams(user.sub);
   }
 }

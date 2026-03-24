@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { getAccessToken } from '../api/axios';
 import { useAuth } from '../hooks/useAuth';
+import { PledgeNotificationsProvider } from './PledgeNotifications';
 
 export function ProtectedRoute() {
   const location = useLocation();
@@ -22,5 +23,9 @@ export function ProtectedRoute() {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  return <Outlet />;
+  return (
+    <PledgeNotificationsProvider>
+      <Outlet />
+    </PledgeNotificationsProvider>
+  );
 }

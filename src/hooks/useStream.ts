@@ -8,17 +8,23 @@ export type Stream = {
   title: string;
   description: string;
   category: string;
+  mode: 'normal' | 'pledge';
+  matchId?: string;
   status: 'live' | 'ended';
   likesCount: number;
   commentsCount: number;
   sharesCount: number;
   viewersCount: number;
+  recordingUrl?: string;
+  recordedAt?: string;
+  recordingDurationSeconds?: number;
   shareUrl: string;
   livekitRoomName: string;
   participants: Array<{
     userId: string;
     role: 'host' | 'guest' | 'invited';
     username: string;
+    avatarUrl?: string;
     joinedAt: string;
   }>;
 };
@@ -32,10 +38,71 @@ export type StreamComment = {
   createdAt?: string;
 };
 
+export type StreamGiftEvent = {
+  streamId: string;
+  amount: number;
+  giftedBy: string;
+  creditedAmount: number;
+};
+
+export type StreamLikeEvent = {
+  streamId: string;
+  likesCount: number;
+  likedBy: string;
+  likerCount?: number;
+};
+
+export type StreamPresenceEvent = {
+  streamId: string;
+  viewersCount: number;
+  joinedUsername?: string;
+};
+
+export type StreamParticipantRemovedEvent = {
+  streamId: string;
+  removedUserId: string;
+  removedUsername: string;
+  reason?: 'removed' | 'left' | 'declined';
+  participants: Stream['participants'];
+};
+
+export type StreamParticipantUpdatedEvent = {
+  streamId: string;
+  participants: Stream['participants'];
+};
+
+export type StreamMediaStateEvent = {
+  streamId: string;
+  userId: string;
+  username: string;
+  isMuted: boolean;
+  isCameraOff: boolean;
+};
+
+export type StreamStoppedEvent = {
+  _id: string;
+  status: 'live' | 'ended';
+  endedAt?: string;
+};
+
+export type StreamConnectionDetails = {
+  token: string;
+  url: string;
+  roomName: string;
+  canPublish: boolean;
+};
+
 export function useStream() {
   const [activeStreams, setActiveStreams] = useState<Stream[]>([]);
   const [stream, setStream] = useState<Stream | null>(null);
   const [comments, setComments] = useState<StreamComment[]>([]);
+  const [recentGift, setRecentGift] = useState<StreamGiftEvent | null>(null);
+  const [recentLike, setRecentLike] = useState<StreamLikeEvent | null>(null);
+  const [recentViewerJoin, setRecentViewerJoin] = useState<StreamPresenceEvent | null>(null);
+  const [recentParticipantRemoved, setRecentParticipantRemoved] = useState<StreamParticipantRemovedEvent | null>(null);
+  const [recentParticipantUpdated, setRecentParticipantUpdated] = useState<StreamParticipantUpdatedEvent | null>(null);
+  const [recentMediaState, setRecentMediaState] = useState<StreamMediaStateEvent | null>(null);
+  const [recentStreamStopped, setRecentStreamStopped] = useState<StreamStoppedEvent | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -52,8 +119,9 @@ export function useStream() {
       },
     });
 
-    socketRef.current.on('streamLiked', (payload: { likesCount: number }) => {
+    socketRef.current.on('streamLiked', (payload: StreamLikeEvent) => {
       setStream((prev) => (prev ? { ...prev, likesCount: payload.likesCount } : prev));
+      setRecentLike(payload);
     });
 
     socketRef.current.on('streamCommented', (payload: StreamComment) => {
@@ -65,6 +133,36 @@ export function useStream() {
 
     socketRef.current.on('streamShared', (payload: { sharesCount: number }) => {
       setStream((prev) => (prev ? { ...prev, sharesCount: payload.sharesCount } : prev));
+    });
+
+    socketRef.current.on('streamGifted', (payload: StreamGiftEvent) => {
+      setRecentGift(payload);
+    });
+
+    socketRef.current.on('streamPresenceUpdated', (payload: StreamPresenceEvent) => {
+      setStream((prev) => (prev ? { ...prev, viewersCount: payload.viewersCount } : prev));
+      if (payload.joinedUsername) {
+        setRecentViewerJoin(payload);
+      }
+    });
+
+    socketRef.current.on('streamParticipantRemoved', (payload: StreamParticipantRemovedEvent) => {
+      setStream((prev) => (prev ? { ...prev, participants: payload.participants } : prev));
+      setRecentParticipantRemoved(payload);
+    });
+
+    socketRef.current.on('streamParticipantUpdated', (payload: StreamParticipantUpdatedEvent) => {
+      setStream((prev) => (prev ? { ...prev, participants: payload.participants } : prev));
+      setRecentParticipantUpdated(payload);
+    });
+
+    socketRef.current.on('streamMediaStateUpdated', (payload: StreamMediaStateEvent) => {
+      setRecentMediaState(payload);
+    });
+
+    socketRef.current.on('streamStopped', (payload: StreamStoppedEvent) => {
+      setStream((prev) => (prev ? { ...prev, status: payload.status, endedAt: payload.endedAt } : prev));
+      setRecentStreamStopped(payload);
     });
 
     return socketRef.current;
@@ -120,22 +218,55 @@ export function useStream() {
   }) => {
     const { data } = await api.post<Stream>('/streams/start', payload);
     setStream(data);
+    await fetchActiveStreams();
     return data;
   };
 
   const stopStream = async (streamId: string) => api.post(`/streams/${streamId}/stop`);
   const inviteStreamer = async (streamId: string, streamerUserId: string) =>
     api.post(`/streams/${streamId}/invite`, { streamerUserId });
+  const acceptInvite = async (streamId: string) => api.post(`/streams/${streamId}/accept-invite`);
   const shareStream = async (streamId: string) => api.post(`/streams/${streamId}/share`);
   const likeStream = async (streamId: string) => api.post(`/streams/${streamId}/like`);
   const commentOnStream = async (streamId: string, message: string) =>
     api.post(`/streams/${streamId}/comments`, { message });
   const blockViewer = async (streamId: string, blockedUserId: string) =>
     api.post(`/streams/${streamId}/block`, { blockedUserId });
+  const removeParticipant = async (streamId: string, participantUserId: string) =>
+    api.post(`/streams/${streamId}/remove-participant`, { participantUserId });
+  const leaveStreamParticipation = async (streamId: string) => api.post(`/streams/${streamId}/leave`);
   const giftStream = async (
     streamId: string,
     payload: { amount: number; description: string },
   ) => api.post(`/streams/${streamId}/gift`, payload);
+  const updateMediaState = (
+    streamId: string,
+    payload: { isMuted: boolean; isCameraOff: boolean },
+  ) => connect()?.emit('streamMediaState', { streamId, ...payload });
+
+  const getConnectionDetails = async (streamId: string) => {
+    const { data } = await api.get<StreamConnectionDetails>(`/streams/${streamId}/token`);
+    return data;
+  };
+
+  const saveRecording = async (
+    streamId: string,
+    payload: {
+      fileName?: string;
+      mimeType?: string;
+      base64Data: string;
+      durationSeconds?: number;
+    },
+  ) => {
+    const { data } = await api.post(`/streams/${streamId}/recording`, payload);
+    setStream((prev) => (prev ? { ...prev, ...(data.stream ?? {}) } : prev));
+    return data;
+  };
+
+  const fetchMyRecordings = async () => {
+    const { data } = await api.get<Stream[]>('/streams/me/recordings');
+    return data;
+  };
 
   useEffect(() => {
     return () => disconnect();
@@ -145,6 +276,13 @@ export function useStream() {
     activeStreams,
     stream,
     comments,
+    recentGift,
+    recentLike,
+    recentViewerJoin,
+    recentParticipantRemoved,
+    recentParticipantUpdated,
+    recentMediaState,
+    recentStreamStopped,
     loading,
     error,
     socket: socketRef.current,
@@ -157,10 +295,17 @@ export function useStream() {
     startStream,
     stopStream,
     inviteStreamer,
+    acceptInvite,
     shareStream,
     likeStream,
     commentOnStream,
     blockViewer,
+    removeParticipant,
+    leaveStreamParticipation,
     giftStream,
+    updateMediaState,
+    getConnectionDetails,
+    saveRecording,
+    fetchMyRecordings,
   };
 }

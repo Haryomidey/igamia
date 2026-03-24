@@ -20,6 +20,7 @@ declare module 'socket.io' {
     handshake: any;
     join(room: string): Promise<void>;
     leave(room: string): Promise<void>;
+    disconnect(close?: boolean): void;
   }
 
   export class Server {

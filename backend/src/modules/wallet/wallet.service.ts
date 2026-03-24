@@ -32,7 +32,12 @@ export class WalletService {
   }
 
   async getWallet(userId: string) {
-    const wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) }).lean();
+    let wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) }).lean();
+    if (!wallet) {
+      await this.bootstrapWallet(userId);
+      wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) }).lean();
+    }
+
     if (!wallet) {
       throw new NotFoundException('Wallet not found');
     }
@@ -84,6 +89,37 @@ export class WalletService {
     await this.transactionModel.create({
       userId: new Types.ObjectId(userId),
       type: 'debit',
+      amount,
+      currency: 'USD',
+      description,
+      metadata,
+    });
+
+    return wallet;
+  }
+
+  async creditUsd(
+    userId: string,
+    amount: number,
+    description: string,
+    metadata: Record<string, unknown> = {},
+  ) {
+    let wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) });
+    if (!wallet) {
+      await this.bootstrapWallet(userId);
+      wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) });
+    }
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    wallet.usdBalance += amount;
+    await wallet.save();
+
+    await this.transactionModel.create({
+      userId: new Types.ObjectId(userId),
+      type: 'deposit',
       amount,
       currency: 'USD',
       description,

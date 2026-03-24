@@ -1,15 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Payment, PaymentDocument } from './schemas/payment.schema';
 import { InitializePaymentDto } from './dto/initialize-payment.dto';
+import { WalletService } from '../wallet/wallet.service';
 
 @Injectable()
 export class PaymentsService {
   constructor(
     @InjectModel(Payment.name) private readonly paymentModel: Model<PaymentDocument>,
     private readonly configService: ConfigService,
+    private readonly walletService: WalletService,
   ) {}
 
   async initializePaystackPayment(userId: string, dto: InitializePaymentDto) {
@@ -57,6 +59,20 @@ export class PaymentsService {
     });
 
     const result = await response.json();
+
+    if (!response.ok || result?.status === false) {
+      payment.status = 'failed';
+      payment.metadata = result?.data ?? result ?? {};
+      await payment.save();
+      throw new BadRequestException(result?.message ?? 'Unable to initialize Paystack payment');
+    }
+
+    payment.metadata = {
+      ...(payment.metadata ?? {}),
+      initializeResponse: result?.data ?? result,
+    };
+    await payment.save();
+
     return { payment, paystack: result };
   }
 
@@ -85,9 +101,27 @@ export class PaymentsService {
 
     const result = await response.json();
 
-    if (result?.data?.status === 'success') {
+    if (!response.ok) {
+      throw new BadRequestException(result?.message ?? 'Unable to verify Paystack payment');
+    }
+
+    if (result?.data?.status === 'success' && payment.status !== 'successful') {
+      await this.walletService.creditUsd(
+        payment.userId.toString(),
+        payment.amount,
+        `Paystack deposit for ${payment.purpose}`,
+        {
+          reference,
+          gateway: 'paystack',
+          verifiedAt: new Date().toISOString(),
+        },
+      );
       payment.status = 'successful';
       payment.metadata = result.data;
+      await payment.save();
+    } else if (result?.data?.status !== 'success' && payment.status === 'initialized') {
+      payment.status = 'failed';
+      payment.metadata = result?.data ?? {};
       await payment.save();
     }
 

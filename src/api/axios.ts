@@ -71,3 +71,6 @@ export const getApiErrorMessage = (
 
 export const streamSocketUrl =
   import.meta.env.VITE_STREAM_SOCKET_URL ?? 'http://localhost:4000/streams';
+
+export const pledgeSocketUrl =
+  import.meta.env.VITE_PLEDGE_SOCKET_URL ?? 'http://localhost:4000/pledges';

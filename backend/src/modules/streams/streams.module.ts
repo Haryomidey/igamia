@@ -11,6 +11,7 @@ import { StreamLike, StreamLikeSchema } from './schemas/stream-like.schema';
 import { UsersModule } from '../users/users.module';
 import { WsJwtGuard } from '../../common/guards/ws-jwt.guard';
 import { WalletModule } from '../wallet/wallet.module';
+import { SocialModule } from '../social/social.module';
 
 @Module({
   imports: [
@@ -28,8 +29,10 @@ import { WalletModule } from '../wallet/wallet.module';
     ]),
     UsersModule,
     WalletModule,
+    SocialModule,
   ],
   controllers: [StreamsController],
   providers: [StreamsService, StreamsGateway, WsJwtGuard],
+  exports: [StreamsService],
 })
 export class StreamsModule {}

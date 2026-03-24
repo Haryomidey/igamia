@@ -1,15 +1,17 @@
-import React, { useEffect } from 'react';
-import { ArrowLeft, Trophy, Play, Users, Circle, MoreVertical, ChevronRight } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowLeft, Trophy, Play, Users, Circle, MoreVertical, ChevronRight, Video } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useGames } from '../../../hooks/useGames';
 import { useStream } from '../../../hooks/useStream';
 
 export default function History() {
   const { featuredGames } = useGames({ featured: true });
-  const { activeStreams, fetchActiveStreams } = useStream();
+  const { activeStreams, fetchActiveStreams, fetchMyRecordings } = useStream();
+  const [recordings, setRecordings] = useState<any[]>([]);
 
   useEffect(() => {
     void fetchActiveStreams();
+    void fetchMyRecordings().then(setRecordings).catch(() => setRecordings([]));
     // The stream hook recreates helpers on render, so this initial fetch is mount-only by design.
   }, []);
 
@@ -66,6 +68,46 @@ export default function History() {
           </div>
         </div>
       </div>
+
+      <section className="space-y-8">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-black text-white uppercase tracking-[0.3em] italic">Recorded Streams</h2>
+        </div>
+        {recordings.length ? (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {recordings.map((recording) => (
+              <div key={recording._id} className="group overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/5">
+                <div className="relative aspect-video overflow-hidden">
+                  <video
+                    src={recording.recordingUrl}
+                    controls
+                    preload="metadata"
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent" />
+                  <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/50 px-3 py-1.5 backdrop-blur-md">
+                    <Video size={12} className="text-brand-primary" />
+                    <span className="text-[8px] font-black uppercase tracking-widest text-white">Recorded</span>
+                  </div>
+                </div>
+                <div className="space-y-3 p-5">
+                  <h3 className="text-sm font-black uppercase italic text-white">{recording.title}</h3>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                    {recording.recordedAt ? new Date(recording.recordedAt).toLocaleString() : 'Saved stream'}
+                  </p>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
+                    Duration: {recording.recordingDurationSeconds ?? 0}s
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
+            No recorded streams yet.
+          </div>
+        )}
+      </section>
 
       <section className="space-y-8">
         <h2 className="text-sm font-black text-white uppercase tracking-[0.3em] italic">Ongoing Streams</h2>

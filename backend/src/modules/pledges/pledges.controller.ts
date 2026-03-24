@@ -4,6 +4,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { PledgesService } from './pledges.service';
 import { CreateMatchDto } from './dto/create-match.dto';
 import { PlacePledgeDto } from './dto/place-pledge.dto';
+import { RequestJoinMatchDto } from './dto/request-join-match.dto';
 
 @Controller('pledges')
 export class PledgesController {
@@ -33,8 +34,29 @@ export class PledgesController {
   joinMatch(
     @Param('matchId') matchId: string,
     @CurrentUser() user: { sub: string; username: string },
+    @Body() dto: RequestJoinMatchDto,
   ) {
-    return this.pledgesService.joinMatch(matchId, user.sub, user.username);
+    return this.pledgesService.joinMatch(matchId, user.sub, user.username, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('matches/:matchId/requests/:requestUserId/accept')
+  acceptJoinRequest(
+    @Param('matchId') matchId: string,
+    @Param('requestUserId') requestUserId: string,
+    @CurrentUser() user: { sub: string; username: string },
+  ) {
+    return this.pledgesService.acceptJoinRequest(matchId, requestUserId, user.sub, user.username);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('matches/:matchId/requests/:requestUserId/reject')
+  rejectJoinRequest(
+    @Param('matchId') matchId: string,
+    @Param('requestUserId') requestUserId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    return this.pledgesService.rejectJoinRequest(matchId, requestUserId, user.sub);
   }
 
   @UseGuards(JwtAuthGuard)

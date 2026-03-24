@@ -60,7 +60,18 @@ export function useWallet(autoLoad = true) {
     amount: number;
     email: string;
     purpose: string;
-  }) => api.post('/payments/paystack/initialize', payload);
+  }) => {
+    const { data } = await api.post('/payments/paystack/initialize', payload);
+    return data;
+  };
+
+  const verifyPayment = async (reference: string) => {
+    const { data } = await api.get('/payments/paystack/callback', {
+      params: { reference },
+    });
+    await fetchWallet();
+    return data;
+  };
 
   useEffect(() => {
     if (autoLoad) {
@@ -76,5 +87,6 @@ export function useWallet(autoLoad = true) {
     withdraw,
     gift,
     initializePayment,
+    verifyPayment,
   };
 }

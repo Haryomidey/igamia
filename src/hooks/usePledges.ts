@@ -19,6 +19,13 @@ export type MatchActivity = {
     username: string;
     joinedAt: string;
   }>;
+  pendingRequests?: Array<{
+    userId: string;
+    username: string;
+    amountUsd: number;
+    requestedAt: string;
+  }>;
+  streamId?: string;
 };
 
 export function usePledges(autoLoad = true) {
@@ -59,8 +66,20 @@ export function usePledges(autoLoad = true) {
     return data;
   };
 
-  const joinMatch = async (matchId: string) => {
-    const { data } = await api.post(`/pledges/matches/${matchId}/join`);
+  const joinMatch = async (matchId: string, amountUsd: number) => {
+    const { data } = await api.post(`/pledges/matches/${matchId}/join`, { amountUsd });
+    await fetchMatches();
+    return data;
+  };
+
+  const acceptJoinRequest = async (matchId: string, requestUserId: string) => {
+    const { data } = await api.post(`/pledges/matches/${matchId}/requests/${requestUserId}/accept`);
+    await fetchMatches();
+    return data;
+  };
+
+  const rejectJoinRequest = async (matchId: string, requestUserId: string) => {
+    const { data } = await api.post(`/pledges/matches/${matchId}/requests/${requestUserId}/reject`);
     await fetchMatches();
     return data;
   };
@@ -85,6 +104,8 @@ export function usePledges(autoLoad = true) {
     fetchMatches,
     createMatch,
     joinMatch,
+    acceptJoinRequest,
+    rejectJoinRequest,
     placePledge,
   };
 }

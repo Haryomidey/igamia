@@ -37,9 +37,9 @@ export default function GameLibrary() {
     activities,
     loading: pledgesLoading,
     error: pledgesError,
-    placePledge,
     joinMatch,
     createMatch,
+    fetchMatches,
   } = usePledges(true);
   const { walletData } = useWallet(true);
 
@@ -102,6 +102,13 @@ export default function GameLibrary() {
   };
 
   const openJoinPledge = (match: MatchActivity) => {
+    if (isOwnMatch(match)) {
+      toast.info('Use the notification bell to accept or reject join requests for your pledge.', {
+        title: 'Manage Your Pledge',
+      });
+      return;
+    }
+
     setPledgeMode('join');
     setSelectedMatch(match);
     setSelectedGameForCreate(null);
@@ -121,9 +128,18 @@ export default function GameLibrary() {
     });
   };
 
+  const isOwnMatch = (match: MatchActivity) => Boolean(user?._id && match.hostUserId === user._id);
+
   const handleOpenPledge = (game: Game) => {
     const match = matchesByGameId[game._id]?.find((item) => item.status === 'open');
     if (match) {
+      if (isOwnMatch(match)) {
+        toast.info('Use the notification bell to manage requests for your pledge.', {
+          title: 'Manage Your Pledge',
+        });
+        return;
+      }
+
       openJoinPledge(match);
       return;
     }
@@ -139,15 +155,17 @@ export default function GameLibrary() {
 
     try {
       setIsBetting(true);
-      const isParticipant = selectedMatch.participants.some((participant) => participant.userId === user._id);
-      if (!isParticipant) {
-        await joinMatch(selectedMatch._id);
-      }
-      await placePledge(selectedMatch._id, Number(betAmount));
-      toast.success(`Pledge joined successfully for ${selectedMatch.title}.`);
+      await joinMatch(selectedMatch._id, Number(betAmount));
+      toast.success(`Join request sent for ${selectedMatch.title}. Wait for the host to respond.`);
       closePledgeModal();
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Unable to place stake.');
+      if (err?.response?.status === 404) {
+        await fetchMatches();
+        closePledgeModal();
+        toast.error('That pledge is no longer available. The list has been refreshed.');
+      } else {
+        toast.error(err?.response?.data?.message ?? 'Unable to place stake.');
+      }
     } finally {
       setIsBetting(false);
     }
@@ -161,7 +179,7 @@ export default function GameLibrary() {
 
     try {
       setIsBetting(true);
-      const createdMatch = await createMatch({
+      await createMatch({
         gameId: selectedGameForCreate._id,
         title: createForm.title.trim(),
         scheduledFor: new Date(createForm.scheduledFor).toISOString(),
@@ -169,9 +187,7 @@ export default function GameLibrary() {
         maxPlayers: Number(createForm.maxPlayers),
       });
       toast.success('Pledge created. Other players can now join you live.');
-      setPledgeMode('join');
-      setSelectedGameForCreate(null);
-      openJoinPledge(createdMatch);
+      closePledgeModal();
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to create pledge.');
     } finally {
@@ -262,10 +278,20 @@ export default function GameLibrary() {
                   </div>
                 </div>
                 <button
-                  onClick={() => openJoinPledge(activity)}
-                  className="w-full rounded-2xl bg-brand-primary px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-brand-accent hover:text-black"
+                  onClick={() => {
+                    if (isOwnMatch(activity)) {
+                      toast.info('Use the notification bell to manage requests for your pledge.', {
+                        title: 'Manage Your Pledge',
+                      });
+                      return;
+                    }
+
+                    openJoinPledge(activity);
+                  }}
+                  disabled={isOwnMatch(activity)}
+                  className="w-full rounded-2xl bg-brand-primary px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-brand-accent hover:text-black disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-brand-primary disabled:hover:text-white"
                 >
-                  Join Active Pledge
+                  {isOwnMatch(activity) ? 'Your Pledge' : 'Join Active Pledge'}
                 </button>
               </div>
             ))}
@@ -320,10 +346,24 @@ export default function GameLibrary() {
                     onClick={() => handleOpenPledge(game)}
                     className="flex-1 bg-brand-primary text-white py-4 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-brand-accent hover:text-black transition-all shadow-lg shadow-brand-primary/20"
                   >
-                    {primaryMatch ? 'Join Pledge' : 'Start Pledge'}
+                    {primaryMatch ? (isOwnMatch(primaryMatch) ? 'Your Pledge' : 'Join Pledge') : 'Start Pledge'}
                   </button>
                   <button
-                    onClick={() => (primaryMatch ? openJoinPledge(primaryMatch) : openCreatePledge(game))}
+                    onClick={() => {
+                      if (!primaryMatch) {
+                        openCreatePledge(game);
+                        return;
+                      }
+
+                      if (isOwnMatch(primaryMatch)) {
+                        toast.info('Use the notification bell to manage requests for your pledge.', {
+                          title: 'Manage Your Pledge',
+                        });
+                        return;
+                      }
+
+                      openJoinPledge(primaryMatch);
+                    }}
                     className="w-14 h-14 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-brand-primary/10 text-brand-primary transition-all"
                   >
                     {primaryMatch ? <Swords size={20} /> : <PlusCircle size={20} />}
@@ -386,7 +426,7 @@ export default function GameLibrary() {
                       </p>
                     </div>
                     <button type="submit" disabled={isBetting} className="w-full bg-brand-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-accent hover:text-black transition-all disabled:opacity-50 shadow-lg shadow-brand-primary/20">
-                      {isBetting ? 'Joining...' : 'Join and Pledge'}
+                      {isBetting ? 'Sending...' : 'Request To Join'}
                     </button>
                   </form>
                 </>

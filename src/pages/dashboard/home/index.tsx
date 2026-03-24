@@ -5,7 +5,6 @@ import {
   Users,
   TrendingUp,
   Search,
-  Bell,
   Coins,
   ChevronRight,
   ChevronLeft,
@@ -73,10 +72,12 @@ export default function Home() {
           >
             <RefreshCcw size={18} className="text-zinc-400" />
           </button>
-          <button className="w-12 h-12 bg-white/5 border border-white/10 rounded-2xl flex items-center justify-center hover:bg-white/10 transition-colors relative">
-            <Bell size={20} className="text-zinc-400" />
-            <span className="absolute top-3 right-3 w-2 h-2 bg-brand-accent rounded-full border-2 border-[#0f0b21]" />
-          </button>
+          <Link
+            to="/stream?start=1"
+            className="inline-flex h-12 items-center justify-center rounded-2xl bg-brand-primary px-5 text-[10px] font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-brand-accent hover:text-black"
+          >
+            Go Live
+          </Link>
           <div className="flex items-center gap-3 bg-brand-primary/10 border border-brand-primary/20 px-4 py-2.5 rounded-2xl">
             <div className="w-6 h-6 bg-brand-primary rounded-lg flex items-center justify-center">
               <Coins size={14} className="text-white" />
@@ -115,7 +116,7 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-9 relative group rounded-[2.5rem] overflow-hidden border border-white/10 aspect-video lg:aspect-auto lg:h-[400px]">
               <img
-                src={`https://picsum.photos/seed/${topStream._id}/1400/700`}
+                src={topStream.participants[0]?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${topStream.participants[0]?.username ?? topStream.title}`}
                 alt={topStream.title}
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 referrerPolicy="no-referrer"
@@ -155,7 +156,7 @@ export default function Home() {
             {secondaryStream && (
               <div className="lg:col-span-3 hidden lg:block relative rounded-[2.5rem] overflow-hidden border border-white/10">
                 <img
-                  src={`https://picsum.photos/seed/${secondaryStream._id}/600/900`}
+                  src={secondaryStream.participants[0]?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${secondaryStream.participants[0]?.username ?? secondaryStream.title}`}
                   alt={secondaryStream.title}
                   className="absolute inset-0 w-full h-full object-cover opacity-40 grayscale"
                   referrerPolicy="no-referrer"

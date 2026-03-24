@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { User } from '../../users/schemas/user.schema';
+import { Match } from '../../pledges/schemas/match.schema';
 
 export type StreamDocument = HydratedDocument<Stream>;
 
@@ -14,6 +15,9 @@ class StreamParticipant {
 
   @Prop({ required: true })
   username: string;
+
+  @Prop({ default: '' })
+  avatarUrl: string;
 
   @Prop({ default: Date.now })
   joinedAt: Date;
@@ -32,6 +36,12 @@ export class Stream {
 
   @Prop({ default: 'General' })
   category: string;
+
+  @Prop({ default: 'normal', enum: ['normal', 'pledge'] })
+  mode: 'normal' | 'pledge';
+
+  @Prop({ type: Types.ObjectId, ref: Match.name })
+  matchId?: Types.ObjectId;
 
   @Prop({ default: 'live', enum: ['live', 'ended'] })
   status: 'live' | 'ended';
@@ -58,7 +68,19 @@ export class Stream {
   endedAt?: Date;
 
   @Prop({ default: '' })
+  recordingUrl: string;
+
+  @Prop()
+  recordedAt?: Date;
+
+  @Prop({ default: 0 })
+  recordingDurationSeconds: number;
+
+  @Prop({ default: '' })
   shareUrl: string;
+
+  @Prop()
+  roomName?: string;
 
   @Prop({ default: '' })
   livekitRoomName: string;

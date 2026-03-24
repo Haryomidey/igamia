@@ -81,4 +81,15 @@ export class SocialService {
     await request.save();
     return request;
   }
+
+  async getFollowerIds(userId: string) {
+    const requests = await this.connectionRequestModel
+      .find({
+        toUserId: new Types.ObjectId(userId),
+        status: 'accepted',
+      })
+      .lean();
+
+    return requests.map((request) => request.fromUserId.toString());
+  }
 }

@@ -8,11 +8,12 @@ import {
   X,
   RefreshCcw,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useWallet, type WalletSnapshot } from '../../../hooks/useWallet';
 import { useToast } from '../../../components/ToastProvider';
+import { useAuth } from '../../../hooks/useAuth';
 
-const inflowTypes = new Set(['mining_reward', 'gift_received', 'referral_reward', 'winning']);
+const inflowTypes = new Set(['mining_reward', 'gift_received', 'referral_reward', 'winning', 'deposit']);
 
 function formatCurrency(amount: number, currency: 'USD' | 'IGC') {
   if (currency === 'USD') {
@@ -23,11 +24,16 @@ function formatCurrency(amount: number, currency: 'USD' | 'IGC') {
 }
 
 export default function Wallet() {
-  const { walletData, loading, error, withdraw, fetchWallet } = useWallet(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
+  const { walletData, loading, error, withdraw, fetchWallet, initializePayment, verifyPayment } = useWallet(true);
   const toast = useToast();
+  const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState(''); 
+  const [depositAmount, setDepositAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isVerifyingDeposit, setIsVerifyingDeposit] = useState(false);
 
   const groupedTransactions = useMemo(() => {
     const transactions = walletData?.transactions ?? [];
@@ -56,6 +62,85 @@ export default function Wallet() {
       toast.error(error, { title: 'Wallet Error' });
     }
   }, [error, toast]);
+
+  useEffect(() => {
+    const reference = searchParams.get('reference') ?? searchParams.get('trxref');
+    if (!reference || isVerifyingDeposit) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const finalizeDeposit = async () => {
+      try {
+        setIsVerifyingDeposit(true);
+        const result = await verifyPayment(reference);
+        if (cancelled) {
+          return;
+        }
+
+        if (result?.payment?.status === 'successful') {
+          toast.success('Deposit completed successfully.');
+        } else {
+          toast.warning(result?.paystack?.message ?? 'Deposit verification is still pending.');
+        }
+      } catch (err: any) {
+        if (!cancelled) {
+          toast.error(err?.response?.data?.message ?? 'Unable to verify deposit.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsVerifyingDeposit(false);
+          const nextParams = new URLSearchParams(searchParams);
+          nextParams.delete('reference');
+          nextParams.delete('trxref');
+          setSearchParams(nextParams, { replace: true });
+        }
+      }
+    };
+
+    void finalizeDeposit();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, setSearchParams, toast, verifyPayment, isVerifyingDeposit]);
+
+  const handleDeposit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const amount = Number(depositAmount);
+    if (!amount || amount <= 0) {
+      toast.warning('Enter a valid deposit amount.');
+      return;
+    }
+
+    if (!user?.email) {
+      toast.error('Your account email is required to initialize this payment.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const result = await initializePayment({
+        amount,
+        email: user.email,
+        purpose: 'wallet deposit',
+      });
+
+      const authorizationUrl = result?.paystack?.data?.authorization_url;
+      if (!authorizationUrl) {
+        toast.error(result?.paystack?.message ?? 'Unable to initialize Paystack payment.');
+        return;
+      }
+
+      window.location.href = authorizationUrl;
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to start deposit.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleWithdraw = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -122,7 +207,7 @@ export default function Wallet() {
 
             <div className="flex gap-4">
               <button
-                onClick={() => toast.info('Deposit flow is not wired yet.')}
+                onClick={() => setIsDepositOpen(true)}
                 className="flex-1 bg-white/20 backdrop-blur-md border border-white/30 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-white/30 transition-all"
               >
                 Deposit
@@ -236,6 +321,53 @@ export default function Wallet() {
       </div>
 
       <AnimatePresence>
+        {isDepositOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0f0b21]/90 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="w-full max-w-md bg-[#1a1635] border border-white/10 rounded-[3rem] p-10 relative shadow-2xl"
+            >
+              <button
+                onClick={() => setIsDepositOpen(false)}
+                className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+              <h3 className="text-3xl font-black text-white uppercase italic mb-3">Deposit Funds</h3>
+              <p className="mb-8 text-sm text-zinc-500">
+                Continue to Paystack to fund your wallet. Your USD wallet will be credited after successful verification.
+              </p>
+              <form onSubmit={handleDeposit} className="space-y-8">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Amount</label>
+                  <div className="relative">
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary font-black">$</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-12 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                      required
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-brand-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-accent hover:text-black transition-all disabled:opacity-50 shadow-lg shadow-brand-primary/20"
+                >
+                  {isSubmitting ? 'Redirecting...' : 'Continue To Paystack'}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
         {isWithdrawOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0f0b21]/90 backdrop-blur-md">
             <motion.div

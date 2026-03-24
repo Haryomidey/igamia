@@ -8,6 +8,8 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { UseGuards } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { WsJwtGuard } from '../../common/guards/ws-jwt.guard';
 import { StreamsService } from './streams.service';
@@ -29,13 +31,74 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly streamsService: StreamsService) {}
+  constructor(
+    private readonly streamsService: StreamsService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
 
-  handleConnection(_client: Socket) {
+  private userRoom(userId: string) {
+    return `user:${userId}`;
+  }
+
+  private async roomViewersCount(streamId: string) {
+    const adapter = (this.server as Server & { adapter?: { rooms?: Map<string, Set<string>> } }).adapter;
+    const socketsMap = (this.server as Server & { sockets?: Map<string, Socket> }).sockets;
+    const roomSockets = adapter?.rooms?.get(streamId);
+    if (!roomSockets?.size) {
+      return 0;
+    }
+
+    const participantIds = new Set(await this.streamsService.getParticipantUserIds(streamId));
+    let viewersCount = 0;
+
+    roomSockets.forEach((socketId) => {
+      const socket = socketsMap?.get(socketId);
+      const userId = socket?.data?.user?.sub as string | undefined;
+      if (!userId || !participantIds.has(userId)) {
+        viewersCount += 1;
+      }
+    });
+
+    return viewersCount;
+  }
+
+  private async emitPresenceUpdate(streamId: string, joinedUsername?: string) {
+    this.server.to(streamId).emit('streamPresenceUpdated', {
+      streamId,
+      viewersCount: await this.roomViewersCount(streamId),
+      joinedUsername,
+    });
+  }
+
+  handleConnection(client: Socket) {
+    const token =
+      client.handshake.auth?.token ||
+      client.handshake.headers.authorization?.replace('Bearer ', '');
+
+    if (!token) {
+      return true;
+    }
+
+    try {
+      const user = this.jwtService.verify(token, {
+        secret: this.configService.getOrThrow<string>('JWT_SECRET'),
+      }) as { sub: string; username: string; email: string };
+
+      client.data.user = user;
+      void client.join(this.userRoom(user.sub));
+    } catch {
+      return true;
+    }
+
     return true;
   }
 
-  handleDisconnect(_client: Socket) {
+  handleDisconnect(client: Socket) {
+    const currentStreamId = client.data.currentStreamId as string | undefined;
+    if (currentStreamId) {
+      void this.emitPresenceUpdate(currentStreamId);
+    }
     return true;
   }
 
@@ -45,6 +108,9 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @MessageBody() payload: { streamId: string },
   ) {
     await client.join(payload.streamId);
+    client.data.currentStreamId = payload.streamId;
+    const user = client.data.user as { username?: string } | undefined;
+    await this.emitPresenceUpdate(payload.streamId, user?.username);
     return { joined: true, streamId: payload.streamId };
   }
 
@@ -54,6 +120,10 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @MessageBody() payload: { streamId: string },
   ) {
     await client.leave(payload.streamId);
+    if (client.data.currentStreamId === payload.streamId) {
+      client.data.currentStreamId = undefined;
+    }
+    await this.emitPresenceUpdate(payload.streamId);
     return { left: true, streamId: payload.streamId };
   }
 
@@ -64,8 +134,15 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
   ) {
     const user = client.data.user as { sub: string; username: string };
     const stream = await this.streamsService.startStream(user.sub, user.username, dto);
+    const followerIds = await this.streamsService.getFollowerIds(user.sub);
     await client.join(stream._id.toString());
     this.server.emit('streamStarted', stream);
+    this.emitFollowerLiveNotification(followerIds, {
+      streamId: stream._id.toString(),
+      hostUserId: user.sub,
+      hostUsername: user.username,
+      title: stream.title,
+    });
     return stream;
   }
 
@@ -90,6 +167,12 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
       { streamerUserId: payload.streamerUserId },
     );
     this.server.to(payload.streamId).emit('streamerInvited', result);
+    this.emitStreamInviteNotification(payload.streamerUserId, {
+      streamId: payload.streamId,
+      hostUserId: client.data.user.sub,
+      hostUsername: client.data.user.username,
+      title: result.stream.title,
+    });
     return result;
   }
 
@@ -114,6 +197,7 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
       streamId: payload.streamId,
       likesCount: result.likesCount,
       likedBy: client.data.user.username,
+      likerCount: result.likerCount,
     });
     return result;
   }
@@ -161,5 +245,56 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
       creditedAmount: result.creditedAmount,
     });
     return result;
+  }
+
+  @SubscribeMessage('streamMediaState')
+  async streamMediaState(
+    @ConnectedSocket() client: Socket,
+    @MessageBody()
+    payload: {
+      streamId: string;
+      isMuted: boolean;
+      isCameraOff: boolean;
+    },
+  ) {
+    this.emitMediaStateUpdated(payload.streamId, {
+      userId: client.data.user.sub,
+      username: client.data.user.username,
+      isMuted: payload.isMuted,
+      isCameraOff: payload.isCameraOff,
+    });
+
+    return { ok: true };
+  }
+
+  emitFollowerLiveNotification(
+    followerIds: string[],
+    payload: { streamId: string; hostUserId: string; hostUsername: string; title: string },
+  ) {
+    followerIds.forEach((followerId) => {
+      this.server.to(this.userRoom(followerId)).emit('followedHostLive', payload);
+    });
+  }
+
+  emitStreamInviteNotification(
+    invitedUserId: string,
+    payload: { streamId: string; hostUserId: string; hostUsername: string; title: string },
+  ) {
+    this.server.to(this.userRoom(invitedUserId)).emit('streamInviteReceived', payload);
+  }
+
+  emitMediaStateUpdated(
+    streamId: string,
+    payload: {
+      userId: string;
+      username: string;
+      isMuted: boolean;
+      isCameraOff: boolean;
+    },
+  ) {
+    this.server.to(streamId).emit('streamMediaStateUpdated', {
+      streamId,
+      ...payload,
+    });
   }
 }
