@@ -6,12 +6,31 @@ import {
   ConnectionRequest,
   ConnectionRequestDocument,
 } from './schemas/connection-request.schema';
+import { SocialPost, SocialPostDocument } from './schemas/social-post.schema';
+
+export type FeedPost = {
+  _id: unknown;
+  userId: unknown;
+  username: string;
+  userFullName: string;
+  avatarUrl: string;
+  content: string;
+  mediaUrl: string;
+  mediaType: 'text' | 'image' | 'video';
+  likedByUserIds: Types.ObjectId[];
+  likedByMe: boolean;
+  likesCount: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
 
 @Injectable()
 export class SocialService {
   constructor(
     @InjectModel(ConnectionRequest.name)
     private readonly connectionRequestModel: Model<ConnectionRequestDocument>,
+    @InjectModel(SocialPost.name)
+    private readonly socialPostModel: Model<SocialPostDocument>,
     private readonly usersService: UsersService,
   ) {}
 
@@ -80,6 +99,62 @@ export class SocialService {
     request.status = 'accepted';
     await request.save();
     return request;
+  }
+
+  async listFeed(userId: string): Promise<FeedPost[]> {
+    const posts = await this.socialPostModel.find().sort({ createdAt: -1 }).limit(40).lean();
+    return posts.map((post) => ({
+      ...post,
+      likedByMe: post.likedByUserIds.some((likedUserId) => likedUserId.toString() === userId),
+      likesCount: post.likedByUserIds.length,
+    }));
+  }
+
+  async createPost(
+    userId: string,
+    payload: { content?: string; mediaUrl?: string; mediaType?: 'text' | 'image' | 'video' },
+  ) {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!payload.content?.trim() && !payload.mediaUrl?.trim()) {
+      throw new BadRequestException('Post content or media is required');
+    }
+
+    return this.socialPostModel.create({
+      userId: new Types.ObjectId(userId),
+      username: user.username,
+      userFullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      content: payload.content?.trim() || '',
+      mediaUrl: payload.mediaUrl?.trim() || '',
+      mediaType: payload.mediaType ?? (payload.mediaUrl ? 'image' : 'text'),
+      likedByUserIds: [],
+    });
+  }
+
+  async togglePostLike(postId: string, userId: string) {
+    const post = await this.socialPostModel.findById(postId);
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const alreadyLiked = post.likedByUserIds.some((likedUserId) => likedUserId.toString() === userId);
+    if (alreadyLiked) {
+      post.likedByUserIds = post.likedByUserIds.filter((likedUserId) => likedUserId.toString() !== userId);
+    } else {
+      post.likedByUserIds.push(new Types.ObjectId(userId));
+    }
+
+    await post.save();
+
+    return {
+      postId: post.id,
+      likesCount: post.likedByUserIds.length,
+      likedByMe: !alreadyLiked,
+    };
   }
 
   async getFollowerIds(userId: string) {

@@ -12,6 +12,7 @@ import { UsersModule } from '../users/users.module';
 import { WsJwtGuard } from '../../common/guards/ws-jwt.guard';
 import { WalletModule } from '../wallet/wallet.module';
 import { SocialModule } from '../social/social.module';
+import { MediaModule } from '../media/media.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { SocialModule } from '../social/social.module';
     UsersModule,
     WalletModule,
     SocialModule,
+    MediaModule,
   ],
   controllers: [StreamsController],
   providers: [StreamsService, StreamsGateway, WsJwtGuard],

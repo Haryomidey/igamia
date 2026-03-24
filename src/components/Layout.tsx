@@ -15,7 +15,7 @@ export function Layout() {
   return (
     <div className="flex min-h-screen bg-brand-deep text-zinc-100">
       <Sidebar />
-      <main className="flex-1 pb-20 md:pb-0 overflow-y-auto">
+      <main data-dashboard-scroll className="flex-1 pb-20 md:pb-0 overflow-y-auto">
         <div className="max-w-7xl mx-auto p-4 md:p-8">
           <div className="mb-6 flex justify-end">
             <PledgeNotificationsBell />

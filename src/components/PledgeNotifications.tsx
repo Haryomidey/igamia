@@ -41,7 +41,37 @@ type StreamInviteNotification = {
   read: boolean;
 };
 
-type DashboardNotification = PledgeRequestNotification | FollowedHostLiveNotification | StreamInviteNotification;
+type PledgeResultClaimNotification = {
+  id: string;
+  type: 'pledge_result_claim';
+  matchId: string;
+  title: string;
+  claimedByUserId: string;
+  claimedByUsername: string;
+  outcome: 'win' | 'loss' | 'draw';
+  note?: string;
+  createdAt: string;
+  read: boolean;
+};
+
+type PledgeDisputeNotification = {
+  id: string;
+  type: 'pledge_dispute';
+  matchId: string;
+  title: string;
+  senderUsername: string;
+  senderRole: 'streamer' | 'assistant';
+  message: string;
+  createdAt: string;
+  read: boolean;
+};
+
+type DashboardNotification =
+  | PledgeRequestNotification
+  | FollowedHostLiveNotification
+  | StreamInviteNotification
+  | PledgeResultClaimNotification
+  | PledgeDisputeNotification;
 
 type PledgeNotificationsContextValue = {
   notifications: DashboardNotification[];
@@ -109,6 +139,59 @@ export function PledgeNotificationsProvider({ children }: { children: React.Reac
       toast.info(`${payload.hostUsername} declined your request for ${payload.title}.`, {
         title: 'Pledge Rejected',
       });
+    });
+
+    pledgeSocket.on('pledgeResultClaimed', (payload: {
+      matchId: string;
+      title: string;
+      claimedByUserId: string;
+      claimedByUsername: string;
+      outcome: 'win' | 'loss' | 'draw';
+      note?: string;
+    }) => {
+      const nextNotification: PledgeResultClaimNotification = {
+        ...payload,
+        id: `claim:${payload.matchId}:${Date.now()}`,
+        type: 'pledge_result_claim',
+        createdAt: new Date().toISOString(),
+        read: false,
+      };
+
+      setNotifications((prev) => [nextNotification, ...prev].slice(0, 20));
+      setActiveNotification(nextNotification);
+    });
+
+    pledgeSocket.on('pledgeResultResolved', (payload: {
+      title: string;
+      decision: 'approved' | 'rejected';
+      disputed?: boolean;
+    }) => {
+      toast.info(
+        payload.decision === 'approved'
+          ? `${payload.title} has been settled.`
+          : payload.disputed
+            ? `${payload.title} moved into dispute.`
+            : `${payload.title} was updated.`,
+        { title: 'Pledge Result' },
+      );
+    });
+
+    pledgeSocket.on('pledgeDisputeUpdated', (payload: {
+      matchId: string;
+      title: string;
+      senderUsername: string;
+      senderRole: 'streamer' | 'assistant';
+      message: string;
+    }) => {
+      const nextNotification: PledgeDisputeNotification = {
+        ...payload,
+        id: `dispute:${payload.matchId}:${Date.now()}`,
+        type: 'pledge_dispute',
+        createdAt: new Date().toISOString(),
+        read: false,
+      };
+
+      setNotifications((prev) => [nextNotification, ...prev].slice(0, 20));
     });
 
     const streamSocket = io(streamSocketUrl, {
@@ -264,6 +347,10 @@ export function PledgeNotificationsBell() {
                   <p className="text-sm font-bold text-white">
                     {notification.type === 'pledge_request'
                       ? `${notification.joinedByUsername} wants to join your pledge`
+                      : notification.type === 'pledge_result_claim'
+                        ? `${notification.claimedByUsername} submitted a result`
+                        : notification.type === 'pledge_dispute'
+                          ? `${notification.senderUsername} updated a dispute`
                       : notification.type === 'stream_invite'
                         ? `${notification.hostUsername} invited you to a live`
                         : `${notification.hostUsername} went live`}
@@ -271,12 +358,18 @@ export function PledgeNotificationsBell() {
                   <p className="mt-1 text-xs text-zinc-400">
                     {notification.type === 'pledge_request'
                       ? `${notification.gameTitle} • $${notification.amountUsd.toFixed(2)} stake`
+                      : notification.type === 'pledge_result_claim'
+                        ? `${notification.outcome.toUpperCase()} claim for ${notification.title}`
+                        : notification.type === 'pledge_dispute'
+                          ? notification.message
                       : notification.title}
                   </p>
                   <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
                     {formatNotificationTime(
                       notification.type === 'pledge_request'
                         ? notification.joinedAt
+                        : notification.type === 'pledge_result_claim' || notification.type === 'pledge_dispute'
+                          ? notification.createdAt
                         : notification.createdAt,
                     )}
                   </p>
@@ -305,6 +398,118 @@ function PledgeJoinNotificationModal() {
   }
 
   if (activeNotification.type !== 'pledge_request') {
+    if (activeNotification.type === 'pledge_result_claim') {
+      const handlePledgeClaimDecision = async (decision: 'approve' | 'reject') => {
+        try {
+          setSubmitting(true);
+          await api.post(`/pledges/matches/${activeNotification.matchId}/result-claim/respond`, {
+            decision,
+          });
+          markAsRead(activeNotification.id);
+          setActiveNotification(null);
+          toast.success(
+            decision === 'approve' ? 'Result approved.' : 'Result rejected and moved to dispute.',
+          );
+        } catch (err: any) {
+          toast.error(err?.response?.data?.message ?? 'Unable to update result claim.');
+        } finally {
+          setSubmitting(false);
+        }
+      };
+
+      return (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#0f0b21]/85 p-6 backdrop-blur-md">
+          <div className="w-full max-w-md rounded-[2.5rem] border border-white/10 bg-[#1a1635] p-8 shadow-2xl">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
+                  Result Claim
+                </p>
+                <h3 className="mt-2 text-xl font-black uppercase italic text-white">
+                  {activeNotification.claimedByUsername} claimed {activeNotification.outcome}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  markAsRead(activeNotification.id);
+                  setActiveNotification(null);
+                }}
+                className="text-zinc-500 transition-colors hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-3 rounded-[2rem] border border-white/10 bg-white/5 p-5">
+              <p className="text-sm text-zinc-300">{activeNotification.title}</p>
+              {activeNotification.note ? (
+                <p className="text-xs text-zinc-400">{activeNotification.note}</p>
+              ) : null}
+            </div>
+            <div className="mt-6 grid grid-cols-2 gap-4">
+              <button
+                onClick={() => void handlePledgeClaimDecision('reject')}
+                disabled={submitting}
+                className="rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-white/10 disabled:opacity-50"
+              >
+                Reject
+              </button>
+              <button
+                onClick={() => void handlePledgeClaimDecision('approve')}
+                disabled={submitting}
+                className="rounded-2xl bg-brand-primary px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-brand-accent hover:text-black disabled:opacity-50"
+              >
+                {submitting ? 'Updating...' : 'Approve'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (activeNotification.type === 'pledge_dispute') {
+      return (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#0f0b21]/85 p-6 backdrop-blur-md">
+          <div className="w-full max-w-md rounded-[2.5rem] border border-white/10 bg-[#1a1635] p-8 shadow-2xl">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
+                  Dispute Update
+                </p>
+                <h3 className="mt-2 text-xl font-black uppercase italic text-white">
+                  {activeNotification.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  markAsRead(activeNotification.id);
+                  setActiveNotification(null);
+                }}
+                className="text-zinc-500 transition-colors hover:text-white"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-2 rounded-[2rem] border border-white/10 bg-white/5 p-5">
+              <p className="text-xs font-black uppercase tracking-widest text-brand-primary">
+                {activeNotification.senderUsername}
+              </p>
+              <p className="text-sm text-zinc-300">{activeNotification.message}</p>
+            </div>
+            <button
+              onClick={() => {
+                markAsRead(activeNotification.id);
+                setActiveNotification(null);
+                navigate(`/disputes/${activeNotification.matchId}`);
+              }}
+              className="mt-6 w-full rounded-2xl bg-brand-primary px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-brand-accent hover:text-black"
+            >
+              Open Dispute
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     const handleStreamNotification = async (action: 'watch' | 'accept' | 'decline') => {
       try {
         setSubmitting(true);

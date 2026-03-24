@@ -383,14 +383,14 @@ export default function GameLibrary() {
 
       <AnimatePresence>
         {(selectedMatch || selectedGameForCreate) && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0f0b21]/90 backdrop-blur-md">
+          <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#0f0b21]/90 p-4 backdrop-blur-md sm:p-6">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="w-full max-w-md bg-[#1a1635] border border-white/10 rounded-[3rem] p-10 relative shadow-2xl"
+              className="relative my-6 ml-auto mr-auto w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto rounded-[3rem] border border-white/10 bg-[#1a1635] p-6 shadow-2xl sm:my-10 sm:max-h-[calc(100vh-3rem)] sm:p-10"
             >
-              <button onClick={closePledgeModal} className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors">
+              <button onClick={closePledgeModal} className="absolute right-6 top-6 text-zinc-500 transition-colors hover:text-white sm:right-8 sm:top-8">
                 <X size={24} />
               </button>
 
@@ -481,10 +481,11 @@ export default function GameLibrary() {
                         <input
                           type="number"
                           min="2"
-                          max="8"
+                          max="2"
                           value={createForm.maxPlayers}
-                          onChange={(e) => setCreateForm((current) => ({ ...current, maxPlayers: e.target.value }))}
-                          className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                          readOnly
+                          disabled
+                          className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white/70 font-black transition-all cursor-not-allowed"
                           required
                         />
                       </div>

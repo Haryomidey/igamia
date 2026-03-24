@@ -23,6 +23,7 @@ import TokenPage from './pages/dashboard/token';
 import FAQ from './pages/dashboard/faq';
 import Leaderboard from './pages/dashboard/leaderboard';
 import Refer from './pages/dashboard/refer';
+import DisputePage from './pages/dashboard/disputes';
 
 export default function App() {
   return (
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="/faq" element={<FAQ />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/refer" element={<Refer />} />
+          <Route path="/disputes/:matchId" element={<DisputePage />} />
         </Route>
       </Route>
 

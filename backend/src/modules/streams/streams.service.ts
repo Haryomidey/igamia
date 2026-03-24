@@ -1,16 +1,14 @@
 import {
   BadRequestException,
-  InternalServerErrorException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
-import { promises as fs } from 'fs';
 import { Model, Types } from 'mongoose';
-import * as path from 'path';
 import { Stream, StreamDocument } from './schemas/stream.schema';
 import { StreamComment, StreamCommentDocument } from './schemas/stream-comment.schema';
 import { StreamLike, StreamLikeDocument } from './schemas/stream-like.schema';
@@ -23,6 +21,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { GiftDto } from '../wallet/dto/gift.dto';
 import { SendStreamGiftDto } from './dto/send-stream-gift.dto';
 import { SocialService } from '../social/social.service';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class StreamsService {
@@ -35,6 +34,7 @@ export class StreamsService {
     private readonly usersService: UsersService,
     private readonly walletService: WalletService,
     private readonly socialService: SocialService,
+    private readonly mediaService: MediaService,
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
   ) {}
@@ -269,7 +269,6 @@ export class StreamsService {
       mimeType?: string;
       base64Data: string;
       durationSeconds?: number;
-      baseUrl: string;
     },
   ) {
     const stream = await this.requireStream(streamId);
@@ -279,26 +278,15 @@ export class StreamsService {
       throw new BadRequestException('Recording data is required');
     }
 
-    const mimeType = payload.mimeType?.trim() || 'video/webm';
-    const extension = mimeType.includes('mp4') ? 'mp4' : 'webm';
-    const base64 = payload.base64Data.includes(',')
-      ? payload.base64Data.split(',').pop() ?? ''
-      : payload.base64Data;
-    const buffer = Buffer.from(base64, 'base64');
+    const uploadedRecording = await this.mediaService.uploadBase64({
+      base64Data: payload.base64Data,
+      mimeType: payload.mimeType || 'video/webm',
+      fileName: payload.fileName?.trim() || `stream-${streamId}-${Date.now()}`,
+      folder: `igamia/users/${userId}/stream-recordings`,
+      resourceType: 'video',
+    });
 
-    if (!buffer.length) {
-      throw new BadRequestException('Recording file is empty');
-    }
-
-    const recordingsDir = path.join(process.cwd(), 'uploads', 'recordings');
-    await fs.mkdir(recordingsDir, { recursive: true });
-
-    const fileName = `stream-${streamId}-${Date.now()}.${extension}`;
-    const filePath = path.join(recordingsDir, fileName);
-    await fs.writeFile(filePath, buffer);
-
-    const normalizedBaseUrl = payload.baseUrl.replace(/\/$/, '');
-    stream.recordingUrl = `${normalizedBaseUrl}/uploads/recordings/${fileName}`;
+    stream.recordingUrl = uploadedRecording.secureUrl;
     stream.recordedAt = new Date();
     stream.recordingDurationSeconds = Math.max(0, Math.round(payload.durationSeconds ?? 0));
     await stream.save();

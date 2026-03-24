@@ -1,5 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StreamsService } from './streams.service';
@@ -198,7 +197,6 @@ export class StreamsController {
   saveRecording(
     @Param('streamId') streamId: string,
     @CurrentUser() user: { sub: string },
-    @Req() req: Request,
     @Body()
     body: {
       fileName?: string;
@@ -207,12 +205,7 @@ export class StreamsController {
       durationSeconds?: number;
     },
   ) {
-    const protocol = req.headers['x-forwarded-proto']?.toString().split(',')[0] || req.protocol;
-    const host = req.get('host') || 'localhost:4000';
-    return this.streamsService.saveRecording(streamId, user.sub, {
-      ...body,
-      baseUrl: `${protocol}://${host}`,
-    });
+    return this.streamsService.saveRecording(streamId, user.sub, body);
   }
 
   @UseGuards(JwtAuthGuard)

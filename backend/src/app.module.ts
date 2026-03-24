@@ -14,6 +14,7 @@ import { GamesModule } from './modules/games/games.module';
 import { PledgesModule } from './modules/pledges/pledges.module';
 import { WatchEarnModule } from './modules/watch-earn/watch-earn.module';
 import { SocialModule } from './modules/social/social.module';
+import { MediaModule } from './modules/media/media.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { SocialModule } from './modules/social/social.module';
     PledgesModule,
     StreamsModule,
     SocialModule,
+    MediaModule,
     PaymentsModule,
   ],
 })

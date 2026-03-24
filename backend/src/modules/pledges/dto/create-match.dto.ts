@@ -1,4 +1,12 @@
-import { IsDateString, IsMongoId, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import {
+  IsDateString,
+  IsMongoId,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Max,
+} from 'class-validator';
 
 export class CreateMatchDto {
   @IsMongoId()
@@ -18,5 +26,6 @@ export class CreateMatchDto {
   @IsOptional()
   @IsNumber()
   @IsPositive()
+  @Max(2)
   maxPlayers?: number;
 }

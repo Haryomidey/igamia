@@ -1,22 +1,29 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Settings, Edit3, Play, Trophy, Share2, List, CheckCircle2, Coins, Wallet } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { useWallet } from '../../../hooks/useWallet';
+import { usePledges } from '../../../hooks/usePledges';
 
 export default function Profile() {
   const { user } = useAuth();
   const { walletData } = useWallet(true);
+  const { fetchMyStats } = usePledges(false);
   const [activeTab, setActiveTab] = useState('wallet');
+  const [competitiveProfile, setCompetitiveProfile] = useState<any>(null);
 
   const profileStats = useMemo(() => {
     return {
       followers: walletData?.transactions.length ?? 0,
       following: Math.min((walletData?.transactions.length ?? 0) + 12, 999),
-      achievements: Math.min(Math.max(Math.floor((walletData?.wallet.igcBalance ?? 0) / 250), 1), 6),
+      achievements: competitiveProfile?.achievements?.length ?? 0,
     };
-  }, [walletData]);
+  }, [competitiveProfile?.achievements?.length, walletData]);
+
+  useEffect(() => {
+    void fetchMyStats().then(setCompetitiveProfile).catch(() => setCompetitiveProfile(null));
+  }, []);
 
   if (!user) {
     return (
@@ -94,16 +101,26 @@ export default function Profile() {
               <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/10 blur-3xl rounded-full -translate-y-1/2 translate-x-1/2" />
               <p className="text-[10px] font-black text-brand-primary uppercase tracking-[0.2em] mb-2 relative z-10">Status</p>
               <p className="text-sm text-white font-black uppercase italic relative z-10">{user.emailVerified ? 'Verified Account' : 'Verification Pending'}</p>
-              <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-widest relative z-10">Referral code: {user.referralCode}</p>
+              <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-widest relative z-10">
+                Referral code: {user.referralCode}
+              </p>
+              <p className="text-[10px] text-zinc-500 mt-2 font-bold uppercase tracking-widest relative z-10">
+                Win rate: {competitiveProfile?.winRate ?? 0}% • Rank #{competitiveProfile?.rank ?? '-'}
+              </p>
             </div>
           </div>
 
           <div className="bg-white/5 p-8 rounded-[3rem] border border-white/10 shadow-2xl">
             <h3 className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] mb-6">Achievements</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {Array.from({ length: 6 }, (_, index) => (
-                <div key={index} className={`aspect-square border rounded-2xl flex items-center justify-center transition-all ${index < profileStats.achievements ? 'bg-brand-primary/20 border-brand-primary/30' : 'bg-white/5 border-white/10'}`}>
-                  <Trophy size={20} className={index < profileStats.achievements ? 'text-brand-primary' : 'text-zinc-700'} />
+            <div className="grid grid-cols-2 gap-4">
+              {(competitiveProfile?.achievements?.length
+                ? competitiveProfile.achievements
+                : ['Challenger', 'Streaming Pro']).map((achievement: string) => (
+                <div key={achievement} className="rounded-2xl border border-brand-primary/20 bg-brand-primary/10 px-4 py-5">
+                  <Trophy size={18} className="text-brand-primary" />
+                  <p className="mt-3 text-xs font-black uppercase tracking-widest text-white">
+                    {achievement}
+                  </p>
                 </div>
               ))}
             </div>

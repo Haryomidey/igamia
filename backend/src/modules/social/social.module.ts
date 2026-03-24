@@ -7,11 +7,13 @@ import {
   ConnectionRequestSchema,
 } from './schemas/connection-request.schema';
 import { UsersModule } from '../users/users.module';
+import { SocialPost, SocialPostSchema } from './schemas/social-post.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: ConnectionRequest.name, schema: ConnectionRequestSchema },
+      { name: SocialPost.name, schema: SocialPostSchema },
     ]),
     UsersModule,
   ],

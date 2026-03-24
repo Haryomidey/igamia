@@ -201,7 +201,7 @@ export function InvitePlayersModal({
             initial={{ opacity: 0, scale: 0.92, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.92, y: 20 }}
-            className="pointer-events-auto relative w-full rounded-[2rem] border border-white/10 bg-brand-deep p-5 shadow-2xl"
+            className="pointer-events-auto relative w-full rounded-2xl border border-white/10 bg-brand-deep p-5 shadow-2xl"
           >
             <button onClick={onClose} className="absolute right-4 top-4 text-zinc-500 hover:text-white">
               <X size={18} />

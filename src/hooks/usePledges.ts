@@ -12,7 +12,7 @@ export type MatchActivity = {
   prizePool: number;
   minimumStakeUsd: number;
   maxPlayers: number;
-  status: 'open' | 'live' | 'closed' | 'settled';
+  status: 'open' | 'live' | 'awaiting_confirmation' | 'disputed' | 'settled';
   mode: string;
   participants: Array<{
     userId: string;
@@ -26,11 +26,55 @@ export type MatchActivity = {
     requestedAt: string;
   }>;
   streamId?: string;
+  resultClaim?: {
+    claimedByUserId?: string;
+    claimedByUsername?: string;
+    outcome?: 'win' | 'loss' | 'draw';
+    status?: 'pending' | 'approved' | 'rejected';
+    note?: string;
+    createdAt?: string;
+    respondedAt?: string;
+  } | null;
+  winnerUserId?: string;
+  loserUserId?: string;
+  isDraw?: boolean;
+  settledAt?: string;
+  dispute?: {
+    open: boolean;
+    openedByUserId?: string;
+    openedByUsername?: string;
+    reason?: string;
+    openedAt?: string;
+    messages: Array<{
+      senderUserId?: string;
+      senderUsername: string;
+      senderRole: 'streamer' | 'assistant';
+      message: string;
+      createdAt: string;
+    }>;
+  };
+};
+
+export type LeaderboardEntry = {
+  rank: number;
+  userId: string;
+  username: string;
+  avatarUrl: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  matches: number;
+  winRate: number;
+  streamsHosted: number;
+  rankPoints: number;
+  medals: string[];
+  achievements: string[];
 };
 
 export function usePledges(autoLoad = true) {
   const [matches, setMatches] = useState<MatchActivity[]>([]);
   const [activities, setActivities] = useState<MatchActivity[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(autoLoad);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +96,22 @@ export function usePledges(autoLoad = true) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchMatch = async (matchId: string) => {
+    const { data } = await api.get<MatchActivity>(`/pledges/matches/${matchId}`);
+    return data;
+  };
+
+  const fetchLeaderboard = async () => {
+    const { data } = await api.get<LeaderboardEntry[]>('/pledges/leaderboard');
+    setLeaderboard(data);
+    return data;
+  };
+
+  const fetchMyStats = async () => {
+    const { data } = await api.get<LeaderboardEntry | Record<string, unknown>>('/pledges/me/stats');
+    return data;
   };
 
   const createMatch = async (payload: {
@@ -90,22 +150,56 @@ export function usePledges(autoLoad = true) {
     return data;
   };
 
+  const submitResultClaim = async (
+    matchId: string,
+    payload: { outcome: 'win' | 'loss' | 'draw' | 'dispute'; note?: string },
+  ) => {
+    const { data } = await api.post(`/pledges/matches/${matchId}/result-claim`, payload);
+    return data;
+  };
+
+  const respondToResultClaim = async (
+    matchId: string,
+    payload: { decision: 'approve' | 'reject' },
+  ) => {
+    const { data } = await api.post(`/pledges/matches/${matchId}/result-claim/respond`, payload);
+    return data;
+  };
+
+  const fetchDispute = async (matchId: string) => {
+    const { data } = await api.get(`/pledges/matches/${matchId}/dispute`);
+    return data;
+  };
+
+  const sendDisputeMessage = async (matchId: string, message: string) => {
+    const { data } = await api.post(`/pledges/matches/${matchId}/dispute/messages`, { message });
+    return data;
+  };
+
   useEffect(() => {
     if (autoLoad) {
-      void fetchMatches();
+      void Promise.all([fetchMatches(), fetchLeaderboard()]);
     }
   }, [autoLoad]);
 
   return {
     matches,
     activities,
+    leaderboard,
     loading,
     error,
     fetchMatches,
+    fetchMatch,
+    fetchLeaderboard,
+    fetchMyStats,
     createMatch,
     joinMatch,
     acceptJoinRequest,
     rejectJoinRequest,
     placePledge,
+    submitResultClaim,
+    respondToResultClaim,
+    fetchDispute,
+    sendDisputeMessage,
   };
 }

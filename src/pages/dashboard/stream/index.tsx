@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../../../hooks/useAuth';
 import { useStream } from '../../../hooks/useStream';
 import { useSocial } from '../../../hooks/useSocial';
+import { usePledges, type MatchActivity } from '../../../hooks/usePledges';
 import { useToast } from '../../../components/ToastProvider';
 import { StreamStageGrid, type VideoTile } from './components/StreamStageGrid';
 import { StreamHeader } from './components/StreamHeader';
@@ -85,6 +86,7 @@ export default function LiveStream() {
     saveRecording,
   } = useStream();
   const { discoverUsers, sendRequest, fetchSocial } = useSocial(true);
+  const { fetchMatch, submitResultClaim } = usePledges(false);
   const toast = useToast();
 
   const [message, setMessage] = useState('');
@@ -104,6 +106,7 @@ export default function LiveStream() {
   const [likeTicker, setLikeTicker] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [mediaStates, setMediaStates] = useState<Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>>({});
+  const [pledgeMatch, setPledgeMatch] = useState<MatchActivity | null>(null);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraPaused, setIsCameraPaused] = useState(false);
   const [startForm, setStartForm] = useState({
@@ -167,6 +170,33 @@ export default function LiveStream() {
       leaveRoom(resolvedStreamId);
     };
   }, [resolvedStreamId]);
+
+  useEffect(() => {
+    if (!isPledgeStream || !stream?.matchId) {
+      setPledgeMatch(null);
+      return;
+    }
+
+    let active = true;
+    const syncMatch = async () => {
+      try {
+        const nextMatch = await fetchMatch(stream.matchId!);
+        if (active) {
+          setPledgeMatch(nextMatch);
+        }
+      } catch {}
+    };
+
+    void syncMatch();
+    const interval = window.setInterval(() => {
+      void syncMatch();
+    }, 10000);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [isPledgeStream, stream?.matchId]);
 
   useEffect(() => {
     if (error) {
@@ -824,6 +854,31 @@ export default function LiveStream() {
     setStartForm((current) => ({ ...current, [field]: value }));
   };
 
+  const handlePledgeClaim = async (outcome: 'win' | 'loss' | 'draw' | 'dispute') => {
+    if (!stream?.matchId) {
+      return;
+    }
+
+    try {
+      await submitResultClaim(stream.matchId, {
+        outcome,
+        note:
+          outcome === 'dispute'
+            ? 'Streamer requested manual review from the live room.'
+            : `${user?.username ?? 'Streamer'} submitted a ${outcome} claim.`,
+      });
+      const nextMatch = await fetchMatch(stream.matchId);
+      setPledgeMatch(nextMatch);
+      toast.success(
+        outcome === 'dispute'
+          ? 'Dispute opened for this pledge.'
+          : `Your ${outcome} claim has been sent.`,
+      );
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to submit pledge result.');
+    }
+  };
+
   if (!resolvedStreamId && !loading) {
     return (
       <EmptyStreamState
@@ -960,6 +1015,70 @@ export default function LiveStream() {
             </p>
           </div>
         </div>
+
+        {isPledgeStream && isParticipantView && pledgeMatch && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-28 z-20 px-4 sm:bottom-32 sm:px-6 lg:px-8">
+            <div
+              className="pointer-events-auto rounded-[1.75rem] border border-brand-primary/20 bg-black/55 p-4 backdrop-blur-md"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-brand-accent">
+                    Pledge Result Center
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-200">
+                    {pledgeMatch.status === 'settled'
+                      ? pledgeMatch.isDraw
+                        ? 'This match ended in a draw.'
+                        : pledgeMatch.winnerUserId === user?._id
+                          ? 'You have been recorded as the winner.'
+                          : 'This match has been settled.'
+                      : pledgeMatch.status === 'disputed'
+                        ? 'This match is in dispute. Continue the case in the dispute page.'
+                        : pledgeMatch.resultClaim?.status === 'pending'
+                          ? `${pledgeMatch.resultClaim.claimedByUsername} submitted a ${pledgeMatch.resultClaim.outcome} claim.`
+                          : 'Only streamers can submit win, loss, draw, or dispute from here.'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {pledgeMatch.status !== 'settled' && pledgeMatch.status !== 'disputed' && (
+                    <>
+                      <button
+                        onClick={() => void handlePledgeClaim('win')}
+                        className="rounded-full bg-emerald-500/20 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300"
+                      >
+                        Claim Win
+                      </button>
+                      <button
+                        onClick={() => void handlePledgeClaim('loss')}
+                        className="rounded-full bg-rose-500/20 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-rose-200"
+                      >
+                        Claim Loss
+                      </button>
+                      <button
+                        onClick={() => void handlePledgeClaim('draw')}
+                        className="rounded-full bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white"
+                      >
+                        Claim Draw
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() =>
+                      pledgeMatch.status === 'disputed'
+                        ? navigate(`/disputes/${pledgeMatch._id}`)
+                        : void handlePledgeClaim('dispute')
+                    }
+                    className="rounded-full bg-brand-primary/20 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-brand-primary"
+                  >
+                    {pledgeMatch.status === 'disputed' ? 'Open Dispute' : 'Dispute'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <StreamFooter
           isInvitedPending={isInvitedPending}

@@ -32,6 +32,69 @@ class MatchJoinRequest {
   requestedAt!: Date;
 }
 
+@Schema({ _id: false })
+class MatchResultClaim {
+  @Prop({ type: Types.ObjectId, ref: User.name })
+  claimedByUserId?: Types.ObjectId;
+
+  @Prop()
+  claimedByUsername?: string;
+
+  @Prop({ enum: ['win', 'loss', 'draw'] })
+  outcome?: 'win' | 'loss' | 'draw';
+
+  @Prop({ enum: ['pending', 'approved', 'rejected'], default: 'pending' })
+  status?: 'pending' | 'approved' | 'rejected';
+
+  @Prop({ default: '' })
+  note?: string;
+
+  @Prop()
+  createdAt?: Date;
+
+  @Prop()
+  respondedAt?: Date;
+}
+
+@Schema({ _id: false })
+class DisputeMessage {
+  @Prop({ type: Types.ObjectId, ref: User.name })
+  senderUserId?: Types.ObjectId;
+
+  @Prop({ required: true })
+  senderUsername!: string;
+
+  @Prop({ required: true, enum: ['streamer', 'assistant'] })
+  senderRole!: 'streamer' | 'assistant';
+
+  @Prop({ required: true })
+  message!: string;
+
+  @Prop({ default: Date.now })
+  createdAt!: Date;
+}
+
+@Schema({ _id: false })
+class MatchDispute {
+  @Prop({ default: false })
+  open!: boolean;
+
+  @Prop({ type: Types.ObjectId, ref: User.name })
+  openedByUserId?: Types.ObjectId;
+
+  @Prop()
+  openedByUsername?: string;
+
+  @Prop({ default: '' })
+  reason!: string;
+
+  @Prop()
+  openedAt?: Date;
+
+  @Prop({ type: [DisputeMessage], default: [] })
+  messages!: DisputeMessage[];
+}
+
 @Schema({ timestamps: true })
 export class Match {
   @Prop({ type: Types.ObjectId, ref: Game.name, required: true })
@@ -58,11 +121,14 @@ export class Match {
   @Prop({ default: 10 })
   minimumStakeUsd!: number;
 
-  @Prop({ default: 3 })
+  @Prop({ default: 2, max: 2 })
   maxPlayers!: number;
 
-  @Prop({ default: 'open', enum: ['open', 'live', 'closed', 'settled'] })
-  status!: 'open' | 'live' | 'closed' | 'settled';
+  @Prop({
+    default: 'open',
+    enum: ['open', 'live', 'awaiting_confirmation', 'disputed', 'settled'],
+  })
+  status!: 'open' | 'live' | 'awaiting_confirmation' | 'disputed' | 'settled';
 
   @Prop({ type: [MatchParticipant], default: [] })
   participants!: MatchParticipant[];
@@ -73,8 +139,33 @@ export class Match {
   @Prop({ type: Types.ObjectId })
   streamId?: Types.ObjectId;
 
-  @Prop({ default: 'co-op' })
+  @Prop({ default: 'duel' })
   mode!: string;
+
+  @Prop({ type: MatchResultClaim, default: null })
+  resultClaim?: MatchResultClaim | null;
+
+  @Prop({ type: Types.ObjectId, ref: User.name })
+  winnerUserId?: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: User.name })
+  loserUserId?: Types.ObjectId;
+
+  @Prop({ default: false })
+  isDraw!: boolean;
+
+  @Prop()
+  settledAt?: Date;
+
+  @Prop({
+    type: MatchDispute,
+    default: () => ({
+      open: false,
+      reason: '',
+      messages: [],
+    }),
+  })
+  dispute!: MatchDispute;
 }
 
 export const MatchSchema = SchemaFactory.createForClass(Match);
