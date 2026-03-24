@@ -111,35 +111,41 @@ export default function History() {
 
       <section className="space-y-8">
         <h2 className="text-sm font-black text-white uppercase tracking-[0.3em] italic">Ongoing Streams</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {activeStreams.slice(0, 8).map((stream) => (
-            <Link key={stream._id} to={`/stream?streamId=${stream._id}`} className="group cursor-pointer">
-              <div className="relative aspect-[3/4] rounded-[2.5rem] overflow-hidden border border-white/10 mb-4">
-                <img src={`https://picsum.photos/seed/${stream._id}/400/600`} alt={stream.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent" />
-                <div className="absolute top-4 left-4 flex items-center gap-2 bg-brand-primary px-3 py-1 rounded-full">
-                  <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                  <span className="text-[8px] font-black text-white uppercase tracking-widest">Live</span>
-                </div>
-                <div className="absolute bottom-6 left-6 right-6 space-y-3">
-                  <div className="bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-2xl">
-                    <p className="text-[10px] font-black text-white uppercase tracking-tight leading-tight mb-2">{stream.title}</p>
-                    <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20">
-                        <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${stream.participants[0]?.username ?? stream.title}`} alt={stream.participants[0]?.username ?? stream.title} className="w-full h-full object-cover" />
+        {activeStreams.length ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {activeStreams.slice(0, 8).map((stream) => (
+              <Link key={stream._id} to={`/stream?streamId=${stream._id}`} className="group cursor-pointer">
+                <div className="relative aspect-[3/4] rounded-[2.5rem] overflow-hidden border border-white/10 mb-4">
+                  <img src={`https://picsum.photos/seed/${stream._id}/400/600`} alt={stream.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent" />
+                  <div className="absolute top-4 left-4 flex items-center gap-2 bg-brand-primary px-3 py-1 rounded-full">
+                    <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                    <span className="text-[8px] font-black text-white uppercase tracking-widest">Live</span>
+                  </div>
+                  <div className="absolute bottom-6 left-6 right-6 space-y-3">
+                    <div className="bg-white/10 backdrop-blur-md border border-white/20 p-3 rounded-2xl">
+                      <p className="text-[10px] font-black text-white uppercase tracking-tight leading-tight mb-2">{stream.title}</p>
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full overflow-hidden border border-white/20">
+                          <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${stream.participants[0]?.username ?? stream.title}`} alt={stream.participants[0]?.username ?? stream.title} className="w-full h-full object-cover" />
+                        </div>
+                        <span className="text-[8px] font-bold text-zinc-300">{stream.participants[0]?.username ?? 'Host'}</span>
                       </div>
-                      <span className="text-[8px] font-bold text-zinc-300">{stream.participants[0]?.username ?? 'Host'}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[8px] font-black text-zinc-400 uppercase tracking-widest ml-1">
+                      <Users size={10} />
+                      <span>{stream.viewersCount} watching</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 text-[8px] font-black text-zinc-400 uppercase tracking-widest ml-1">
-                    <Users size={10} />
-                    <span>{stream.viewersCount} watching</span>
-                  </div>
                 </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
+            No live streams are active right now.
+          </div>
+        )}
       </section>
 
       <section className="space-y-8">
@@ -149,23 +155,29 @@ export default function History() {
             View More <ChevronRight size={14} />
           </Link>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {featuredGames.slice(0, 8).map((game) => (
-            <Link key={game._id} to={`/play?gameId=${game._id}`} className="group cursor-pointer">
-              <div className="relative aspect-square rounded-[2.5rem] overflow-hidden border border-white/10 mb-4">
-                <img src={game.thumbnail} alt={game.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent opacity-60" />
-              </div>
-              <div className="px-2">
-                <h3 className="text-xs font-black text-white uppercase italic tracking-tight mb-1">{game.title}</h3>
-                <div className="flex items-center gap-1.5 text-[8px] font-black text-zinc-500 uppercase tracking-widest">
-                  <Users size={10} />
-                  <span>{game.activePlayers.toLocaleString()} players</span>
+        {featuredGames.length ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {featuredGames.slice(0, 8).map((game) => (
+              <Link key={game._id} to={`/play?gameId=${game._id}`} className="group cursor-pointer">
+                <div className="relative aspect-square rounded-[2.5rem] overflow-hidden border border-white/10 mb-4">
+                  <img src={game.thumbnail} alt={game.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" referrerPolicy="no-referrer" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent opacity-60" />
                 </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+                <div className="px-2">
+                  <h3 className="text-xs font-black text-white uppercase italic tracking-tight mb-1">{game.title}</h3>
+                  <div className="flex items-center gap-1.5 text-[8px] font-black text-zinc-500 uppercase tracking-widest">
+                    <Users size={10} />
+                    <span>{game.activePlayers.toLocaleString()} players</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
+            No game suggestions are available right now.
+          </div>
+        )}
       </section>
     </div>
   );

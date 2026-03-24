@@ -1,0 +1,113 @@
+import React from 'react';
+import { Send } from 'lucide-react';
+import { StreamCommentStack } from './StreamCommentStack';
+import type { StreamComment } from '../../../../hooks/useStream';
+
+function truncateText(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+}
+
+export function StreamFooter({
+  isInvitedPending,
+  isSubmitting,
+  hostUsername,
+  streamDescription,
+  comments,
+  message,
+  onMessageChange,
+  onSubmitMessage,
+  onAcceptInvite,
+  onDeclineInvite,
+}: {
+  isInvitedPending: boolean;
+  isSubmitting: boolean;
+  hostUsername?: string;
+  streamDescription?: string;
+  comments: StreamComment[];
+  message: string;
+  onMessageChange: (value: string) => void;
+  onSubmitMessage: (event: React.FormEvent) => void;
+  onAcceptInvite: () => void;
+  onDeclineInvite: () => void;
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black via-black/55 to-transparent px-4 pb-4 pt-24 sm:px-6 lg:px-8">
+      <div className="flex h-full flex-col justify-end gap-4">
+        {isInvitedPending && (
+          <div
+            className="pointer-events-auto flex flex-col gap-4 rounded-4xl border border-brand-primary/25 bg-black/55 p-4 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[0.18em] text-brand-accent sm:text-[10px] sm:tracking-[0.24em]">
+                Invitation Pending
+              </p>
+              <p className="mt-1.5 text-xs text-zinc-200 sm:mt-2 sm:text-sm">
+                {hostUsername ?? 'The host'} invited you to join on camera. Accept to go live with
+                them, or decline to stay out of the stage.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => onDeclineInvite()}
+                disabled={isSubmitting}
+                className="rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-[9px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-white/10 disabled:opacity-50 sm:px-5 sm:py-3 sm:text-[10px] sm:tracking-[0.18em]"
+              >
+                Decline
+              </button>
+              <button
+                onClick={() => onAcceptInvite()}
+                disabled={isSubmitting}
+                className="rounded-full bg-brand-primary px-4 py-2.5 text-[9px] font-black uppercase tracking-[0.14em] text-white transition-colors hover:bg-brand-accent hover:text-black disabled:opacity-50 sm:px-5 sm:py-3 sm:text-[10px] sm:tracking-[0.18em]"
+              >
+                {isSubmitting ? 'Updating...' : 'Accept Invite'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {streamDescription && (
+          <div className="pointer-events-auto rounded-[1.25rem] border border-white/10 bg-black/30 px-3 py-2 backdrop-blur-md">
+            <p className="text-[8px] font-black uppercase tracking-[0.14em] text-brand-accent sm:text-[9px] sm:tracking-[0.18em]">
+              Stream Description
+            </p>
+            <p
+              title={streamDescription}
+              className="mt-1 text-[11px] leading-4 text-zinc-200 sm:text-xs sm:leading-5"
+            >
+              {truncateText(streamDescription, 120)}
+            </p>
+          </div>
+        )}
+
+        <StreamCommentStack comments={comments} />
+
+        <form
+          onSubmit={(event) => {
+            event.stopPropagation();
+            onSubmitMessage(event);
+          }}
+          className="pointer-events-auto flex items-center gap-3"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex-1 rounded-full border border-white/10 bg-white/10 backdrop-blur-md">
+            <input
+              type="text"
+              value={message}
+              onChange={(event) => onMessageChange(event.target.value)}
+              placeholder="Say something nice..."
+              className="w-full bg-transparent px-4 py-3 text-xs text-white placeholder:text-zinc-400 focus:outline-none sm:px-5 sm:py-3.5 sm:text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-primary text-white disabled:opacity-50"
+          >
+            <Send size={16} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}

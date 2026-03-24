@@ -63,6 +63,10 @@ function tileLayoutClass(count: number, index: number) {
   return 'col-span-1 row-span-1';
 }
 
+function truncateLabel(value: string, maxLength = 18) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+}
+
 export function StreamStageGrid({
   participants,
   videoTiles,
@@ -99,6 +103,17 @@ export function StreamStageGrid({
             key={participant.userId}
             className={`relative overflow-hidden rounded-[1.5rem] bg-black ${tileLayoutClass(total, index)}`}
           >
+            {participant.role !== 'host' && (
+              <div className="absolute inset-x-0 top-0 z-10 flex justify-start p-3 sm:p-4">
+                <div
+                  title={participant.username}
+                  className="max-w-[75%] truncate rounded-full border border-white/10 bg-black/45 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-white backdrop-blur-md sm:px-3 sm:py-1.5 sm:text-[10px] sm:tracking-[0.18em]"
+                >
+                  {truncateLabel(participant.username)}
+                </div>
+              </div>
+            )}
+
             {showPlaceholder ? (
               <div className="relative h-full w-full">
                 <img
@@ -109,10 +124,10 @@ export function StreamStageGrid({
                 <div className="absolute inset-0 bg-linear-to-t from-black via-black/65 to-black/45" />
                 <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
                   <VideoOff size={28} className="text-brand-accent" />
-                  <p className="mt-4 text-sm font-black uppercase italic text-white sm:text-lg">
+                  <p className="mt-3 text-xs font-black uppercase italic text-white sm:mt-4 sm:text-lg">
                     {participant.username}
                   </p>
-                  <p className="mt-2 text-[10px] font-black uppercase tracking-[0.22em] text-zinc-300 sm:text-xs">
+                  <p className="mt-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-zinc-300 sm:mt-2 sm:text-xs sm:tracking-[0.22em]">
                     {cameraOff ? `${participant.username} paused video` : `Waiting for ${participant.username}`}
                   </p>
                 </div>
@@ -129,8 +144,8 @@ export function StreamStageGrid({
             <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-black/35" />
 
             <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3 sm:p-4">
-              <div className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-white backdrop-blur-md">
-                {participant.username}
+              <div className="rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-white backdrop-blur-md sm:px-3 sm:py-1.5 sm:text-[10px] sm:tracking-[0.18em]">
+                {truncateLabel(participant.username)}
               </div>
               <div className="flex items-center gap-2">
                 {muted && (

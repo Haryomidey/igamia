@@ -67,6 +67,16 @@ export class StreamsService {
     }
   }
 
+  private ensureNotRemoved(stream: StreamDocument, userId: string) {
+    const isRemoved = stream.removedParticipantUserIds?.some(
+      (removedId: Types.ObjectId) => removedId.toString() === userId,
+    );
+
+    if (isRemoved) {
+      throw new ForbiddenException('You have been removed from this live stream');
+    }
+  }
+
   async listActiveStreams() {
     return this.streamModel.find({ status: 'live' }).sort({ createdAt: -1 }).lean();
   }
@@ -101,6 +111,7 @@ export class StreamsService {
   async createViewerToken(streamId: string, userId: string, username: string) {
     const stream = await this.requireStream(streamId);
     this.ensureNotBlocked(stream, userId);
+    this.ensureNotRemoved(stream, userId);
 
     const livekitHost = this.configService.get<string>('LIVEKIT_HOST');
     const apiKey = this.configService.get<string>('LIVEKIT_API_KEY');
@@ -149,12 +160,17 @@ export class StreamsService {
     const hostUser = await this.usersService.findById(userId);
     const shareUrl = `https://igamia.app/stream/${new Types.ObjectId().toString()}`;
     const roomName = `igamia-stream-${userId}-${Date.now()}`;
+    const title = dto.title.trim().slice(0, 120);
+    const description = dto.description?.trim()
+      ? dto.description.trim().slice(0, 220)
+      : `Welcome to ${username} stream, please like, comment and support creator and be respectful.`;
+    const category = dto.category?.trim() ? dto.category.trim().slice(0, 60) : 'General';
 
     const stream = await this.streamModel.create({
       hostUserId: this.objectId(userId),
-      title: dto.title,
-      description: dto.description ?? '',
-      category: dto.category ?? 'General',
+      title,
+      description,
+      category,
       mode: 'normal',
       status: 'live',
       participants: [
@@ -226,10 +242,23 @@ export class StreamsService {
   async stopStream(streamId: string, userId: string) {
     const stream = await this.requireStream(streamId);
     this.ensureHost(stream, userId);
-    stream.status = 'ended';
-    stream.endedAt = new Date();
-    await stream.save();
-    return stream.toObject();
+    const updatedStream = await this.streamModel.findOneAndUpdate(
+      { _id: stream._id, hostUserId: this.objectId(userId) },
+      {
+        $set: {
+          status: 'ended',
+          endedAt: new Date(),
+          participants: [],
+        },
+      },
+      { new: true },
+    );
+
+    if (!updatedStream) {
+      throw new NotFoundException('Stream not found');
+    }
+
+    return updatedStream.toObject();
   }
 
   async saveRecording(
@@ -298,6 +327,14 @@ export class StreamsService {
     const invitedUser = await this.usersService.findById(dto.streamerUserId);
     if (!invitedUser) {
       throw new NotFoundException('Invited streamer not found');
+    }
+
+    const wasRemoved = stream.removedParticipantUserIds?.some(
+      (removedId: Types.ObjectId) => removedId.toString() === dto.streamerUserId,
+    );
+
+    if (wasRemoved) {
+      throw new ForbiddenException('This participant was removed from the live');
     }
 
     const alreadyParticipant = stream.participants.some(
@@ -407,6 +444,16 @@ export class StreamsService {
       (participant: Stream['participants'][number]) =>
         participant.userId.toString() !== participantUserId,
     );
+
+    const alreadyRemoved = (stream.removedParticipantUserIds ?? []).some(
+      (removedId: Types.ObjectId) => removedId.toString() === participantUserId,
+    );
+
+    if (!alreadyRemoved) {
+      stream.removedParticipantUserIds = stream.removedParticipantUserIds ?? [];
+      stream.removedParticipantUserIds.push(this.objectId(participantUserId));
+    }
+
     await stream.save();
 
     return {
@@ -419,9 +466,15 @@ export class StreamsService {
   }
 
   async shareStream(streamId: string) {
-    const stream = await this.requireStream(streamId);
-    stream.sharesCount += 1;
-    await stream.save();
+    const stream = await this.streamModel.findByIdAndUpdate(
+      streamId,
+      { $inc: { sharesCount: 1 } },
+      { new: true },
+    );
+
+    if (!stream) {
+      throw new NotFoundException('Stream not found');
+    }
 
     return {
       message: 'Stream shared successfully',
@@ -438,8 +491,15 @@ export class StreamsService {
       throw new ForbiddenException('You cannot like your own stream');
     }
 
-    stream.likesCount += 1;
-    await stream.save();
+    const updatedStream = await this.streamModel.findByIdAndUpdate(
+      streamId,
+      { $inc: { likesCount: 1 } },
+      { new: true },
+    );
+
+    if (!updatedStream) {
+      throw new NotFoundException('Stream not found');
+    }
 
     const likeRecord = await this.streamLikeModel.findOneAndUpdate(
       {
@@ -457,7 +517,7 @@ export class StreamsService {
     );
 
     return {
-      likesCount: stream.likesCount,
+      likesCount: updatedStream.likesCount,
       likerCount: likeRecord?.count ?? 1,
     };
   }
@@ -473,8 +533,10 @@ export class StreamsService {
       message: dto.message,
     });
 
-    stream.commentsCount += 1;
-    await stream.save();
+    await this.streamModel.updateOne(
+      { _id: stream._id },
+      { $inc: { commentsCount: 1 } },
+    );
 
     return comment.toObject();
   }
@@ -497,6 +559,14 @@ export class StreamsService {
         (participant: Stream['participants'][number]) =>
           participant.userId.toString() !== dto.blockedUserId,
       );
+      if (
+        !(stream.removedParticipantUserIds ?? []).some(
+          (removedId: Types.ObjectId) => removedId.toString() === dto.blockedUserId,
+        )
+      ) {
+        stream.removedParticipantUserIds = stream.removedParticipantUserIds ?? [];
+        stream.removedParticipantUserIds.push(this.objectId(dto.blockedUserId));
+      }
       await stream.save();
     }
 

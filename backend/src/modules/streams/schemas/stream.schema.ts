@@ -52,6 +52,9 @@ export class Stream {
   @Prop({ type: [Types.ObjectId], default: [] })
   blockedUserIds: Types.ObjectId[];
 
+  @Prop({ type: [Types.ObjectId], default: [] })
+  removedParticipantUserIds: Types.ObjectId[];
+
   @Prop({ default: 0 })
   likesCount: number;
 

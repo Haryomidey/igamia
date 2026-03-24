@@ -142,7 +142,9 @@ export default function Refer() {
               })}
             </div>
           ) : (
-            <div className="text-center text-zinc-500">{loading ? 'Loading referrals...' : 'No referrals yet.'}</div>
+            <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
+              {loading ? 'Loading referrals...' : 'No referrals yet.'}
+            </div>
           )}
         </div>
       </section>
