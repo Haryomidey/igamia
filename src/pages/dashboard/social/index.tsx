@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { useSocial, type SocialUser } from '../../../hooks/useSocial';
 import { useWallet } from '../../../hooks/useWallet';
 import { useToast } from '../../../components/ToastProvider';
@@ -30,28 +31,25 @@ export default function Social() {
   const [selectedGamer, setSelectedGamer] = useState<SocialUser | null>(null);
   const [giftAmount, setGiftAmount] = useState('10');
   const [postText, setPostText] = useState('');
-  const [draftMessage, setDraftMessage] = useState('');
   const [search, setSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
   const pendingPreviewUrlRef = useRef<string | null>(null);
   const toast = useToast();
+  const navigate = useNavigate();
 
   const {
     discoverUsers,
     friends,
     requests,
     feed,
-    messages,
     loading,
     error,
     sendRequest,
     acceptRequest,
     fetchSocial,
-    fetchMessages,
     createPost,
-    sendMessage,
     togglePostLike,
   } = useSocial(true);
   const { walletData, gift } = useWallet(true);
@@ -75,14 +73,6 @@ export default function Social() {
       toast.error(error, { title: 'Community Error' });
     }
   }, [error, toast]);
-
-  useEffect(() => {
-    if (!selectedGamer?.connected) {
-      return;
-    }
-
-    void fetchMessages(selectedGamer.id);
-  }, [selectedGamer?.connected, selectedGamer?.id]);
 
   useEffect(() => {
     pendingPreviewUrlRef.current = pendingMedia?.previewUrl ?? null;
@@ -208,20 +198,6 @@ export default function Social() {
       toast.error(err?.response?.data?.message ?? 'Unable to send gift.');
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleSendMessage = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!selectedGamer) {
-      return;
-    }
-
-    try {
-      await sendMessage(selectedGamer.id, draftMessage.trim());
-      setDraftMessage('');
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Unable to send direct message.');
     }
   };
 
@@ -408,6 +384,13 @@ export default function Social() {
                     >
                       <Heart size={14} />
                       {post.likesCount}
+                    </button>
+                    <button
+                      onClick={() => navigate(`/post/${post._id}`)}
+                      className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-300"
+                    >
+                      <MessageCircle size={14} />
+                      {post.commentsCount ?? 0}
                     </button>
                   </div>
                 </motion.article>
@@ -608,43 +591,20 @@ export default function Social() {
 
                   <div className="rounded-[2rem] border border-white/10 bg-black/20 p-5">
                     <p className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Direct Messages</p>
-                    <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
-                      {messages.map((message) => (
-                        <div
-                          key={message._id}
-                          className={`break-words rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-                            message.toUserId === selectedGamer.id
-                              ? 'ml-10 bg-brand-primary/20 text-white'
-                              : 'mr-10 bg-white/10 text-zinc-200'
-                          }`}
-                        >
-                          {message.message}
-                        </div>
-                      ))}
-                      {!messages.length && (
-                        <div className="rounded-2xl bg-white/5 px-4 py-6 text-center text-zinc-500">
-                          No messages yet.
-                        </div>
-                      )}
-                    </div>
-
-                    <form onSubmit={handleSendMessage} className="mt-4 flex gap-3">
-                      <input
-                        type="text"
-                        value={draftMessage}
-                        onChange={(event) => setDraftMessage(event.target.value)}
-                        placeholder="Send a direct message"
-                        className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none"
-                      />
-                      <button
-                        type="submit"
-                        disabled={!draftMessage.trim()}
-                        className="inline-flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
-                      >
-                        <MessageCircle size={14} />
-                        Send
-                      </button>
-                    </form>
+                    <p className="mt-4 text-sm leading-relaxed text-zinc-400">
+                      Open the full conversation page to view message history and chat in realtime.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate(`/messages/${selectedGamer.id}`);
+                        setSelectedGamer(null);
+                      }}
+                      className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-white/10 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white"
+                    >
+                      <MessageCircle size={14} />
+                      Open Messages
+                    </button>
                   </div>
                 </div>
               )}

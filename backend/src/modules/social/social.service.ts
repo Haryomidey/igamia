@@ -47,6 +47,12 @@ export type SocialFriend = {
   bio: string;
 };
 
+export type SocialUserProfile = SocialFriend & {
+  connected: boolean;
+  pendingRequestSent: boolean;
+  pendingRequestReceived: boolean;
+};
+
 @Injectable()
 export class SocialService {
   constructor(
@@ -259,6 +265,59 @@ export class SocialService {
     return posts.map((post) => this.serializePost(post, userId));
   }
 
+  async getSocialUserProfile(userId: string, targetUserId: string): Promise<SocialUserProfile> {
+    if (!Types.ObjectId.isValid(targetUserId)) {
+      throw new NotFoundException('User not found');
+    }
+
+    const [user, connectedIds, outgoingPendingIds, incomingPendingIds] = await Promise.all([
+      this.usersService.findById(targetUserId),
+      this.getConnectedUserIds(userId),
+      this.connectionRequestModel
+        .find({
+          fromUserId: this.objectId(userId),
+          toUserId: this.objectId(targetUserId),
+          status: 'pending',
+        })
+        .lean(),
+      this.connectionRequestModel
+        .find({
+          fromUserId: this.objectId(targetUserId),
+          toUserId: this.objectId(userId),
+          status: 'pending',
+        })
+        .lean(),
+    ]);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      id: user.id,
+      username: user.username,
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      bio: user.bio,
+      connected: connectedIds.includes(targetUserId),
+      pendingRequestSent: outgoingPendingIds.length > 0,
+      pendingRequestReceived: incomingPendingIds.length > 0,
+    };
+  }
+
+  async getPostById(postId: string, userId: string): Promise<FeedPost> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.socialPostModel.findById(postId).lean();
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    return this.serializePost(post, userId);
+  }
+
   async createPost(
     userId: string,
     payload: { content?: string; mediaUrl?: string; mediaType?: 'text' | 'image' | 'video' },
@@ -288,29 +347,63 @@ export class SocialService {
   }
 
   async togglePostLike(postId: string, userId: string) {
-    const post = await this.socialPostModel.findById(postId);
-    if (!post) {
+    if (!Types.ObjectId.isValid(postId)) {
       throw new NotFoundException('Post not found');
     }
 
-    const alreadyLiked = post.likedByUserIds.some((likedUserId) => likedUserId.toString() === userId);
-    if (alreadyLiked) {
-      post.likedByUserIds = post.likedByUserIds.filter((likedUserId) => likedUserId.toString() !== userId);
-    } else {
-      post.likedByUserIds.push(new Types.ObjectId(userId));
+    const userObjectId = this.objectId(userId);
+    const unlikedPost = await this.socialPostModel.findOneAndUpdate(
+      {
+        _id: this.objectId(postId),
+        likedByUserIds: userObjectId,
+      },
+      {
+        $pull: { likedByUserIds: userObjectId },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (unlikedPost) {
+      return {
+        postId: unlikedPost.id,
+        likesCount: unlikedPost.likedByUserIds.length,
+        likedByMe: false,
+        likedUserId: userId,
+      };
     }
 
-    await post.save();
+    const likedPost = await this.socialPostModel.findOneAndUpdate(
+      {
+        _id: this.objectId(postId),
+        likedByUserIds: { $ne: userObjectId },
+      },
+      {
+        $addToSet: { likedByUserIds: userObjectId },
+      },
+      {
+        new: true,
+      },
+    );
+
+    if (!likedPost) {
+      throw new NotFoundException('Post not found');
+    }
 
     return {
-      postId: post.id,
-      likesCount: post.likedByUserIds.length,
-      likedByMe: !alreadyLiked,
+      postId: likedPost.id,
+      likesCount: likedPost.likedByUserIds.length,
+      likedByMe: true,
       likedUserId: userId,
     };
   }
 
   async listPostComments(postId: string): Promise<PostComment[]> {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
     const post = await this.socialPostModel.findById(postId).lean();
     if (!post) {
       throw new NotFoundException('Post not found');
@@ -325,7 +418,11 @@ export class SocialService {
     return comments.map((comment) => this.serializeComment(comment));
   }
 
-  async commentOnPost(postId: string, userId: string, message: string): Promise<PostComment> {
+  async commentOnPost(postId: string, userId: string, message: string) {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
     const post = await this.socialPostModel.findById(postId);
     if (!post) {
       throw new NotFoundException('Post not found');
@@ -353,7 +450,10 @@ export class SocialService {
     post.commentsCount = (post.commentsCount ?? 0) + 1;
     await post.save();
 
-    return this.serializeComment(comment.toObject());
+    return {
+      comment: this.serializeComment(comment.toObject()),
+      commentsCount: post.commentsCount,
+    };
   }
 
   async getFollowerIds(userId: string) {

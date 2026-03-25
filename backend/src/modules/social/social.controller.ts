@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { FeedPost, SocialService } from './social.service';
+import { FeedPost, SocialService, SocialUserProfile } from './social.service';
 import { SocialGateway } from './social.gateway';
 
 @UseGuards(JwtAuthGuard)
@@ -25,6 +25,22 @@ export class SocialController {
   @Get('feed')
   feed(@CurrentUser() user: { sub: string }): Promise<FeedPost[]> {
     return this.socialService.listFeed(user.sub);
+  }
+
+  @Get('users/:targetUserId')
+  user(
+    @CurrentUser() user: { sub: string },
+    @Param('targetUserId') targetUserId: string,
+  ): Promise<SocialUserProfile> {
+    return this.socialService.getSocialUserProfile(user.sub, targetUserId);
+  }
+
+  @Get('posts/:postId')
+  post(
+    @CurrentUser() user: { sub: string },
+    @Param('postId') postId: string,
+  ): Promise<FeedPost> {
+    return this.socialService.getPostById(postId, user.sub);
   }
 
   @Get('friends')
@@ -72,9 +88,9 @@ export class SocialController {
     @Param('postId') postId: string,
     @Body() body: { message: string },
   ) {
-    const comment = await this.socialService.commentOnPost(postId, user.sub, body.message);
-    this.socialGateway.emitPostCommented(comment);
-    return comment;
+    const result = await this.socialService.commentOnPost(postId, user.sub, body.message);
+    this.socialGateway.emitPostCommented(result);
+    return result.comment;
   }
 
   @Post('requests/:targetUserId')

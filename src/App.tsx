@@ -24,6 +24,8 @@ import FAQ from './pages/dashboard/faq';
 import Leaderboard from './pages/dashboard/leaderboard';
 import Refer from './pages/dashboard/refer';
 import DisputePage from './pages/dashboard/disputes';
+import PostPage from './pages/dashboard/post';
+import MessagesPage from './pages/dashboard/messages';
 
 export default function App() {
   return (
@@ -45,6 +47,8 @@ export default function App() {
           <Route path="/mining" element={<Mining />} />
           <Route path="/wallet" element={<Wallet />} />
           <Route path="/social" element={<Social />} />
+          <Route path="/messages/:userId" element={<MessagesPage />} />
+          <Route path="/post/:postId" element={<PostPage />} />
           <Route path="/history" element={<History />} />
           <Route path="/watch-earn" element={<WatchEarn />} />
           <Route path="/more" element={<More />} />

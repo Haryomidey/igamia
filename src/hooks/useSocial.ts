@@ -37,7 +37,31 @@ export type SocialPost = {
   mediaType: 'text' | 'image' | 'video';
   likedByMe: boolean;
   likesCount: number;
+  commentsCount: number;
   createdAt?: string;
+};
+
+export type SocialComment = {
+  _id: string;
+  postId: string;
+  userId: string;
+  username: string;
+  userFullName: string;
+  avatarUrl: string;
+  message: string;
+  createdAt?: string;
+};
+
+type SocialPostLikeEvent = {
+  postId: string;
+  likesCount: number;
+  likedByMe?: boolean;
+  likedUserId?: string;
+};
+
+type SocialPostCommentEvent = {
+  comment: SocialComment;
+  commentsCount: number;
 };
 
 export type DirectMessage = {
@@ -55,9 +79,11 @@ export function useSocial(autoLoad = true) {
   const [requests, setRequests] = useState<SocialRequest[]>([]);
   const [feed, setFeed] = useState<SocialPost[]>([]);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [commentsByPost, setCommentsByPost] = useState<Record<string, SocialComment[]>>({});
   const [loading, setLoading] = useState(autoLoad);
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const activeUserIdRef = useRef<string | null>(null);
 
   const connect = () => {
     if (socketRef.current || !getAccessToken()) {
@@ -73,6 +99,48 @@ export function useSocial(autoLoad = true) {
 
     socketRef.current.on('social:postCreated', (payload: SocialPost) => {
       setFeed((current) => [payload, ...current.filter((post) => post._id !== payload._id)]);
+    });
+
+    socketRef.current.on('social:postLiked', (payload: SocialPostLikeEvent) => {
+      setFeed((current) =>
+        current.map((post) =>
+          post._id === payload.postId
+            ? {
+                ...post,
+                likesCount: payload.likesCount,
+                likedByMe:
+                  payload.likedUserId === activeUserIdRef.current
+                    ? Boolean(payload.likedByMe)
+                    : post.likedByMe,
+              }
+            : post,
+        ),
+      );
+    });
+
+    socketRef.current.on('social:postCommented', (payload: SocialPostCommentEvent) => {
+      setFeed((current) =>
+        current.map((post) =>
+          post._id === payload.comment.postId
+            ? { ...post, commentsCount: payload.commentsCount }
+            : post,
+        ),
+      );
+      setCommentsByPost((current) => {
+        const existing = current[payload.comment.postId];
+        if (!existing) {
+          return current;
+        }
+
+        if (existing.some((comment) => comment._id === payload.comment._id)) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [payload.comment.postId]: [...existing, payload.comment],
+        };
+      });
     });
 
     socketRef.current.on('social:directMessageReceived', (payload: DirectMessage) => {
@@ -123,6 +191,11 @@ export function useSocial(autoLoad = true) {
   const fetchMessages = async (targetUserId: string) => {
     const { data } = await api.get<DirectMessage[]>(`/social/messages/${targetUserId}`);
     setMessages(data);
+    return data;
+  };
+
+  const fetchSocialUser = async (targetUserId: string) => {
+    const { data } = await api.get<SocialUser>(`/social/users/${targetUserId}`);
     return data;
   };
 
@@ -181,7 +254,64 @@ export function useSocial(autoLoad = true) {
     return data;
   };
 
+  const fetchPostComments = async (postId: string) => {
+    const { data } = await api.get<SocialComment[]>(`/social/posts/${postId}/comments`);
+    setCommentsByPost((current) => ({
+      ...current,
+      [postId]: data,
+    }));
+    return data;
+  };
+
+  const fetchPost = async (postId: string) => {
+    const { data } = await api.get<SocialPost>(`/social/posts/${postId}`);
+    setFeed((current) => {
+      const exists = current.some((post) => post._id === data._id);
+      if (!exists) {
+        return [data, ...current];
+      }
+
+      return current.map((post) => (post._id === data._id ? data : post));
+    });
+    return data;
+  };
+
+  const commentOnPost = async (postId: string, message: string) => {
+    const { data } = await api.post<SocialComment>(`/social/posts/${postId}/comments`, { message });
+    setCommentsByPost((current) => {
+      const existing = current[postId] ?? [];
+      if (existing.some((comment) => comment._id === data._id)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [postId]: [...existing, data],
+      };
+    });
+    setFeed((current) =>
+      current.map((post) =>
+        post._id === postId
+          ? { ...post, commentsCount: (post.commentsCount ?? 0) + 1 }
+          : post,
+      ),
+    );
+    return data;
+  };
+
   useEffect(() => {
+    const token = getAccessToken();
+    if (!token) {
+      activeUserIdRef.current = null;
+    } else {
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1] ?? '')) as { sub?: string };
+        activeUserIdRef.current = payload.sub ?? null;
+      } catch {
+        activeUserIdRef.current = null;
+      }
+    }
+
     if (autoLoad) {
       void fetchSocial();
       connect();
@@ -195,6 +325,7 @@ export function useSocial(autoLoad = true) {
     friends,
     requests,
     feed,
+    commentsByPost,
     messages,
     loading,
     error,
@@ -202,11 +333,15 @@ export function useSocial(autoLoad = true) {
     connect,
     disconnect,
     fetchSocial,
+    fetchSocialUser,
     fetchMessages,
     sendRequest,
     acceptRequest,
     createPost,
     sendMessage,
     togglePostLike,
+    fetchPost,
+    fetchPostComments,
+    commentOnPost,
   };
 }
