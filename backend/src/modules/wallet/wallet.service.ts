@@ -6,6 +6,7 @@ import { Wallet, WalletDocument } from './schemas/wallet.schema';
 import { Transaction, TransactionDocument } from './schemas/transaction.schema';
 import { WithdrawDto } from './dto/withdraw.dto';
 import { GiftDto } from './dto/gift.dto';
+import { SocialService } from '../social/social.service';
 
 @Injectable()
 export class WalletService {
@@ -13,6 +14,7 @@ export class WalletService {
     @InjectModel(Wallet.name) private readonly walletModel: Model<WalletDocument>,
     @InjectModel(Transaction.name) private readonly transactionModel: Model<TransactionDocument>,
     private readonly configService: ConfigService,
+    private readonly socialService: SocialService,
   ) {}
 
   async bootstrapWallet(userId: string) {
@@ -177,6 +179,11 @@ export class WalletService {
   async sendGift(senderUserId: string, dto: GiftDto) {
     if (senderUserId === dto.receiverUserId) {
       throw new BadRequestException('You cannot gift yourself');
+    }
+
+    const connected = await this.socialService.areConnected(senderUserId, dto.receiverUserId);
+    if (!connected) {
+      throw new BadRequestException('You can only send gifts to connected users');
     }
 
     const feeRate = Number(this.configService.get('PLATFORM_FEE_RATE', '0.1'));

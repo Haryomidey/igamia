@@ -16,6 +16,7 @@ import { WalletService } from '../wallet/wallet.service';
 import { PledgesGateway } from './pledges.gateway';
 import { RequestJoinMatchDto } from './dto/request-join-match.dto';
 import { StreamsService } from '../streams/streams.service';
+import { StreamsGateway } from '../streams/streams.gateway';
 import { SubmitResultClaimDto } from './dto/submit-result-claim.dto';
 import { RespondResultClaimDto } from './dto/respond-result-claim.dto';
 import { SendDisputeMessageDto } from './dto/send-dispute-message.dto';
@@ -29,6 +30,7 @@ export class PledgesService implements OnModuleInit {
     private readonly walletService: WalletService,
     private readonly pledgesGateway: PledgesGateway,
     private readonly streamsService: StreamsService,
+    private readonly streamsGateway: StreamsGateway,
   ) {}
 
   async onModuleInit() {
@@ -84,6 +86,25 @@ export class PledgesService implements OnModuleInit {
     }
 
     return 'Assistant: Your dispute message has been recorded. Both streamer statements and recordings can now be reviewed from this thread.';
+  }
+
+  private async closeAssociatedStream(
+    match: MatchDocument,
+    options?: { redirectToDispute?: boolean },
+  ) {
+    if (!match.streamId) {
+      return null;
+    }
+
+    const stoppedStream = await this.streamsService.forceStopStream(match.streamId.toString());
+    this.streamsGateway.emitStreamStopped(match.streamId.toString(), {
+      _id: stoppedStream._id.toString(),
+      status: stoppedStream.status,
+      endedAt: stoppedStream.endedAt,
+      redirectToDispute: options?.redirectToDispute,
+    });
+
+    return stoppedStream;
   }
 
   private async settleMatch(match: MatchDocument, outcome: 'win' | 'loss' | 'draw', claimantUserId: string) {
@@ -503,6 +524,8 @@ export class PledgesService implements OnModuleInit {
       } as any;
       await match.save();
 
+      await this.closeAssociatedStream(match, { redirectToDispute: true });
+
       this.pledgesGateway.emitDisputeUpdated(
         match.participants.map((participant) => participant.userId.toString()),
         {
@@ -604,6 +627,8 @@ export class PledgesService implements OnModuleInit {
         },
       );
 
+      await this.closeAssociatedStream(match, { redirectToDispute: true });
+
       return {
         message: 'Result claim rejected. Match moved to dispute.',
         match: match.toObject(),
@@ -628,6 +653,8 @@ export class PledgesService implements OnModuleInit {
         isDraw: refreshedMatch.isDraw,
       },
     );
+
+    await this.closeAssociatedStream(refreshedMatch);
 
     return {
       message: 'Result claim approved and match settled.',

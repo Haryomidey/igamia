@@ -6,7 +6,7 @@ export default function FAQ() {
   const toast = useToast();
   const faqs = [
     { q: "What is iGamia?", a: "iGamia is a social gaming platform where you can pledge USD on games, stream your gameplay, and earn rewards." },
-    { q: "How do I mine iGamia Coins?", a: "You can mine coins daily by watching featured videos in the 'Mine' section. Each video watched adds to your daily mining progress." },
+    { q: "How do I earn iGamia Coins daily?", a: "Use the daily rewards section to complete the scheduled watch sessions one at a time. Live stream activity is grouped separately under Watch Streams." },
     { q: "Is my money safe?", a: "Yes, we use secure escrow systems for all pledges and industry-standard encryption for your wallet." },
     { q: "Can I withdraw iGamia Coins?", a: "iGamia Coins (IGC) are currently non-withdrawable. They will be convertible to mainnet tokens once listed on exchanges." },
     { q: "How do I earn from referrals?", a: "Invite friends using your unique link. You'll earn USD rewards once they complete their first pledge or profile setup." }

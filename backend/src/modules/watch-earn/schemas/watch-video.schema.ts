@@ -20,8 +20,14 @@ export class WatchVideo {
   @Prop({ required: true })
   rewardIgc!: number;
 
+  @Prop({ default: 30 })
+  durationSeconds!: number;
+
   @Prop({ default: true })
   active!: boolean;
+
+  @Prop({ required: true })
+  availableOnKey!: string;
 
   @Prop({ required: true })
   daySlot!: number;

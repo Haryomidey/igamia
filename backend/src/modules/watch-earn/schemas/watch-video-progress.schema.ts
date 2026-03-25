@@ -3,10 +3,10 @@ import { HydratedDocument, Types } from 'mongoose';
 import { User } from '../../users/schemas/user.schema';
 import { WatchVideo } from './watch-video.schema';
 
-export type WatchVideoCompletionDocument = HydratedDocument<WatchVideoCompletion>;
+export type WatchVideoProgressDocument = HydratedDocument<WatchVideoProgress>;
 
 @Schema({ timestamps: true })
-export class WatchVideoCompletion {
+export class WatchVideoProgress {
   @Prop({ type: Types.ObjectId, ref: User.name, required: true })
   userId!: Types.ObjectId;
 
@@ -17,12 +17,14 @@ export class WatchVideoCompletion {
   watchedOnKey!: string;
 
   @Prop({ required: true })
-  rewardIgc!: number;
+  startedAt!: Date;
+
+  @Prop({ required: true })
+  eligibleAt!: Date;
 
   createdAt?: Date;
 
   updatedAt?: Date;
 }
 
-export const WatchVideoCompletionSchema =
-  SchemaFactory.createForClass(WatchVideoCompletion);
+export const WatchVideoProgressSchema = SchemaFactory.createForClass(WatchVideoProgress);

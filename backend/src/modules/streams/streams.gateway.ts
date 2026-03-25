@@ -107,6 +107,19 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { streamId: string },
   ) {
+    const currentStreamId = client.data.currentStreamId as string | undefined;
+    const joinedRooms = (client as Socket & { rooms?: Set<string> }).rooms;
+
+    if (currentStreamId && currentStreamId !== payload.streamId) {
+      await client.leave(currentStreamId);
+      await this.emitPresenceUpdate(currentStreamId);
+    }
+
+    if (currentStreamId === payload.streamId && joinedRooms?.has(payload.streamId)) {
+      await this.emitPresenceUpdate(payload.streamId);
+      return { joined: true, streamId: payload.streamId, duplicate: true };
+    }
+
     await client.join(payload.streamId);
     client.data.currentStreamId = payload.streamId;
     const user = client.data.user as { username?: string } | undefined;
@@ -296,5 +309,17 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
       streamId,
       ...payload,
     });
+  }
+
+  emitStreamStopped(
+    streamId: string,
+    payload: {
+      _id: string;
+      status: 'live' | 'ended';
+      endedAt?: Date | string;
+      redirectToDispute?: boolean;
+    },
+  ) {
+    this.server.to(streamId).emit('streamStopped', payload);
   }
 }

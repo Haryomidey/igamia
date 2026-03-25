@@ -2,11 +2,15 @@ import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { FeedPost, SocialService } from './social.service';
+import { SocialGateway } from './social.gateway';
 
 @UseGuards(JwtAuthGuard)
 @Controller('social')
 export class SocialController {
-  constructor(private readonly socialService: SocialService) {}
+  constructor(
+    private readonly socialService: SocialService,
+    private readonly socialGateway: SocialGateway,
+  ) {}
 
   @Get('discover')
   discover(@CurrentUser() user: { sub: string }) {
@@ -23,13 +27,28 @@ export class SocialController {
     return this.socialService.listFeed(user.sub);
   }
 
+  @Get('friends')
+  friends(@CurrentUser() user: { sub: string }) {
+    return this.socialService.listFriends(user.sub);
+  }
+
+  @Get('messages/:targetUserId')
+  messages(
+    @CurrentUser() user: { sub: string },
+    @Param('targetUserId') targetUserId: string,
+  ) {
+    return this.socialService.listMessages(user.sub, targetUserId);
+  }
+
   @Post('posts')
-  createPost(
+  async createPost(
     @CurrentUser() user: { sub: string },
     @Body()
     body: { content?: string; mediaUrl?: string; mediaType?: 'text' | 'image' | 'video' },
   ) {
-    return this.socialService.createPost(user.sub, body);
+    const post = await this.socialService.createPost(user.sub, body);
+    this.socialGateway.emitPostCreated(post);
+    return post;
   }
 
   @Post('posts/:postId/like')
@@ -41,18 +60,39 @@ export class SocialController {
   }
 
   @Post('requests/:targetUserId')
-  sendRequest(
+  async sendRequest(
     @CurrentUser() user: { sub: string },
     @Param('targetUserId') targetUserId: string,
   ) {
-    return this.socialService.sendRequest(user.sub, targetUserId);
+    const request = await this.socialService.sendRequest(user.sub, targetUserId);
+    this.socialGateway.emitRequestReceived(targetUserId, {
+      requestId: request.id,
+      fromUserId: user.sub,
+    });
+    return request;
   }
 
   @Post('requests/:requestId/accept')
-  acceptRequest(
+  async acceptRequest(
     @CurrentUser() user: { sub: string },
     @Param('requestId') requestId: string,
   ) {
-    return this.socialService.acceptRequest(user.sub, requestId);
+    const request = await this.socialService.acceptRequest(user.sub, requestId);
+    this.socialGateway.emitRequestAccepted(request.fromUserId.toString(), {
+      requestId: request.id,
+      acceptedByUserId: user.sub,
+    });
+    return request;
+  }
+
+  @Post('messages/:targetUserId')
+  async sendMessage(
+    @CurrentUser() user: { sub: string },
+    @Param('targetUserId') targetUserId: string,
+    @Body() body: { message: string },
+  ) {
+    const message = await this.socialService.sendDirectMessage(user.sub, targetUserId, body.message);
+    this.socialGateway.emitDirectMessage(targetUserId, message);
+    return message;
   }
 }

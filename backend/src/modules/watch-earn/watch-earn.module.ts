@@ -7,6 +7,10 @@ import {
   WatchVideoCompletion,
   WatchVideoCompletionSchema,
 } from './schemas/watch-video-completion.schema';
+import {
+  WatchVideoProgress,
+  WatchVideoProgressSchema,
+} from './schemas/watch-video-progress.schema';
 import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
@@ -14,6 +18,7 @@ import { WalletModule } from '../wallet/wallet.module';
     MongooseModule.forFeature([
       { name: WatchVideo.name, schema: WatchVideoSchema },
       { name: WatchVideoCompletion.name, schema: WatchVideoCompletionSchema },
+      { name: WatchVideoProgress.name, schema: WatchVideoProgressSchema },
     ]),
     WalletModule,
   ],

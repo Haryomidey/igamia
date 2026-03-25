@@ -83,6 +83,7 @@ export type StreamStoppedEvent = {
   _id: string;
   status: 'live' | 'ended';
   endedAt?: string;
+  redirectToDispute?: boolean;
 };
 
 export type StreamConnectionDetails = {

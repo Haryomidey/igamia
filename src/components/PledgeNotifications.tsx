@@ -4,6 +4,7 @@ import { io, type Socket } from 'socket.io-client';
 import { api, getAccessToken, pledgeSocketUrl, streamSocketUrl } from '../api/axios';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from './ToastProvider';
+import { useAuth } from '../hooks/useAuth';
 
 type PledgeRequestNotification = {
   id: string;
@@ -51,6 +52,7 @@ type PledgeResultClaimNotification = {
   outcome: 'win' | 'loss' | 'draw';
   note?: string;
   createdAt: string;
+  canRespond: boolean;
   read: boolean;
 };
 
@@ -98,6 +100,7 @@ export function PledgeNotificationsProvider({ children }: { children: React.Reac
   const streamSocketRef = useRef<Socket | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const [activeNotification, setActiveNotification] = useState<DashboardNotification | null>(null);
 
@@ -149,23 +152,37 @@ export function PledgeNotificationsProvider({ children }: { children: React.Reac
       outcome: 'win' | 'loss' | 'draw';
       note?: string;
     }) => {
+      const canRespond = payload.claimedByUserId !== user?._id;
       const nextNotification: PledgeResultClaimNotification = {
         ...payload,
         id: `claim:${payload.matchId}:${Date.now()}`,
         type: 'pledge_result_claim',
         createdAt: new Date().toISOString(),
-        read: false,
+        canRespond,
+        read: !canRespond,
       };
 
       setNotifications((prev) => [nextNotification, ...prev].slice(0, 20));
-      setActiveNotification(nextNotification);
+      if (canRespond) {
+        setActiveNotification(nextNotification);
+      } else {
+        toast.info(`Your ${payload.outcome} claim is waiting for ${payload.title} confirmation.`, {
+          title: 'Result Submitted',
+        });
+      }
     });
 
     pledgeSocket.on('pledgeResultResolved', (payload: {
+      matchId: string;
       title: string;
       decision: 'approved' | 'rejected';
       disputed?: boolean;
     }) => {
+      setActiveNotification((current) =>
+        current?.type === 'pledge_result_claim' && current.matchId === payload.matchId
+          ? null
+          : current,
+      );
       toast.info(
         payload.decision === 'approved'
           ? `${payload.title} has been settled.`
@@ -174,6 +191,9 @@ export function PledgeNotificationsProvider({ children }: { children: React.Reac
             : `${payload.title} was updated.`,
         { title: 'Pledge Result' },
       );
+      if (payload.decision === 'rejected' && payload.disputed) {
+        navigate(`/disputes/${payload.matchId}`);
+      }
     });
 
     pledgeSocket.on('pledgeDisputeUpdated', (payload: {
@@ -247,7 +267,7 @@ export function PledgeNotificationsProvider({ children }: { children: React.Reac
       pledgeSocketRef.current = null;
       streamSocketRef.current = null;
     };
-  }, [navigate, toast]);
+  }, [navigate, toast, user?._id]);
 
   const markAsRead = (notificationId: string) => {
     setNotifications((prev) =>
@@ -399,6 +419,51 @@ function PledgeJoinNotificationModal() {
 
   if (activeNotification.type !== 'pledge_request') {
     if (activeNotification.type === 'pledge_result_claim') {
+      if (!activeNotification.canRespond) {
+        return (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-[#0f0b21]/85 p-6 backdrop-blur-md">
+            <div className="w-full max-w-md rounded-[2.5rem] border border-white/10 bg-[#1a1635] p-8 shadow-2xl">
+              <div className="mb-6 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
+                    Result Pending
+                  </p>
+                  <h3 className="mt-2 text-xl font-black uppercase italic text-white">
+                    Waiting for approval
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    markAsRead(activeNotification.id);
+                    setActiveNotification(null);
+                  }}
+                  className="text-zinc-500 transition-colors hover:text-white"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="space-y-3 rounded-[2rem] border border-white/10 bg-white/5 p-5">
+                <p className="text-sm text-zinc-300">
+                  You submitted a {activeNotification.outcome} claim for {activeNotification.title}.
+                </p>
+                {activeNotification.note ? (
+                  <p className="text-xs text-zinc-400">{activeNotification.note}</p>
+                ) : null}
+              </div>
+              <button
+                onClick={() => {
+                  markAsRead(activeNotification.id);
+                  setActiveNotification(null);
+                }}
+                className="mt-6 w-full rounded-2xl bg-brand-primary px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-brand-accent hover:text-black"
+              >
+                Okay
+              </button>
+            </div>
+          </div>
+        );
+      }
+
       const handlePledgeClaimDecision = async (decision: 'approve' | 'reject') => {
         try {
           setSubmitting(true);

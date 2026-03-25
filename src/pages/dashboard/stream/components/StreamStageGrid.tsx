@@ -71,7 +71,7 @@ export function StreamStageGrid({
   participants,
   videoTiles,
   mediaStates,
-  isHostView,
+  canRemoveParticipants,
   currentUserId,
   heroImage,
   onRemoveParticipant,
@@ -80,7 +80,7 @@ export function StreamStageGrid({
   participants: Stream['participants'];
   videoTiles: VideoTile[];
   mediaStates: Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>;
-  isHostView: boolean;
+  canRemoveParticipants: boolean;
   currentUserId?: string;
   heroImage: string;
   onRemoveParticipant: (participantUserId: string, participantUsername: string) => void;
@@ -158,7 +158,7 @@ export function StreamStageGrid({
                     <VideoOff size={12} />
                   </div>
                 )}
-                {isHostView && participant.userId !== currentUserId && (
+                {canRemoveParticipants && participant.userId !== currentUserId && (
                   <button
                     onClick={(event) => {
                       event.stopPropagation();

@@ -7,6 +7,7 @@ import {
   ConnectionRequestDocument,
 } from './schemas/connection-request.schema';
 import { SocialPost, SocialPostDocument } from './schemas/social-post.schema';
+import { DirectMessage, DirectMessageDocument } from './schemas/direct-message.schema';
 
 export type FeedPost = {
   _id: unknown;
@@ -24,6 +25,14 @@ export type FeedPost = {
   updatedAt?: Date;
 };
 
+export type SocialFriend = {
+  id: unknown;
+  username: string;
+  fullName: string;
+  avatarUrl: string;
+  bio: string;
+};
+
 @Injectable()
 export class SocialService {
   constructor(
@@ -31,24 +40,94 @@ export class SocialService {
     private readonly connectionRequestModel: Model<ConnectionRequestDocument>,
     @InjectModel(SocialPost.name)
     private readonly socialPostModel: Model<SocialPostDocument>,
+    @InjectModel(DirectMessage.name)
+    private readonly directMessageModel: Model<DirectMessageDocument>,
     private readonly usersService: UsersService,
   ) {}
 
+  private objectId(id: string) {
+    return new Types.ObjectId(id);
+  }
+
+  async getConnectedUserIds(userId: string) {
+    const accepted = await this.connectionRequestModel
+      .find({
+        status: 'accepted',
+        $or: [
+          { fromUserId: this.objectId(userId) },
+          { toUserId: this.objectId(userId) },
+        ],
+      })
+      .lean();
+
+    return accepted.map((request) =>
+      request.fromUserId.toString() === userId
+        ? request.toUserId.toString()
+        : request.fromUserId.toString(),
+    );
+  }
+
+  async areConnected(userId: string, targetUserId: string) {
+    if (userId === targetUserId) {
+      return true;
+    }
+
+    const connection = await this.connectionRequestModel.findOne({
+      status: 'accepted',
+      $or: [
+        {
+          fromUserId: this.objectId(userId),
+          toUserId: this.objectId(targetUserId),
+        },
+        {
+          fromUserId: this.objectId(targetUserId),
+          toUserId: this.objectId(userId),
+        },
+      ],
+    });
+
+    return Boolean(connection);
+  }
+
   async discover(userId: string) {
-    const users = await this.connectionRequestModel.db
+    const [users, connectedIds, outgoingPendingIds, incomingPendingIds] = await Promise.all([
+      this.connectionRequestModel.db
       .collection('users')
       .find({ _id: { $ne: new Types.ObjectId(userId) } })
-      .limit(12)
-      .toArray();
+      .limit(30)
+      .toArray(),
+      this.getConnectedUserIds(userId),
+      this.connectionRequestModel
+        .find({
+          fromUserId: this.objectId(userId),
+          status: 'pending',
+        })
+        .lean(),
+      this.connectionRequestModel
+        .find({
+          toUserId: this.objectId(userId),
+          status: 'pending',
+        })
+        .lean(),
+    ]);
 
-    return users.map((user: any) => ({
-      id: user._id,
-      name: user.username,
-      username: user.username,
-      fullName: user.fullName,
-      avatarUrl: user.avatarUrl,
-      bio: user.bio,
-    }));
+    const connectedSet = new Set(connectedIds);
+    const outgoingSet = new Set(outgoingPendingIds.map((request) => request.toUserId.toString()));
+    const incomingSet = new Set(incomingPendingIds.map((request) => request.fromUserId.toString()));
+
+    return users
+      .map((user: any) => ({
+        id: user._id,
+        name: user.username,
+        username: user.username,
+        fullName: user.fullName,
+        avatarUrl: user.avatarUrl,
+        bio: user.bio,
+        connected: connectedSet.has(user._id.toString()),
+        pendingRequestSent: outgoingSet.has(user._id.toString()),
+        pendingRequestReceived: incomingSet.has(user._id.toString()),
+      }))
+      .sort((left, right) => Number(right.connected) - Number(left.connected) || left.username.localeCompare(right.username));
   }
 
   async getRequests(userId: string) {
@@ -64,15 +143,27 @@ export class SocialService {
       throw new BadRequestException('You cannot send a request to yourself');
     }
 
+    if (await this.areConnected(userId, targetUserId)) {
+      throw new BadRequestException('You are already connected to this user');
+    }
+
     const targetUser = await this.usersService.findById(targetUserId);
     if (!targetUser) {
       throw new NotFoundException('Target user not found');
     }
 
     const existing = await this.connectionRequestModel.findOne({
-      fromUserId: new Types.ObjectId(userId),
-      toUserId: new Types.ObjectId(targetUserId),
       status: 'pending',
+      $or: [
+        {
+          fromUserId: this.objectId(userId),
+          toUserId: this.objectId(targetUserId),
+        },
+        {
+          fromUserId: this.objectId(targetUserId),
+          toUserId: this.objectId(userId),
+        },
+      ],
     });
 
     if (existing) {
@@ -80,8 +171,8 @@ export class SocialService {
     }
 
     return this.connectionRequestModel.create({
-      fromUserId: new Types.ObjectId(userId),
-      toUserId: new Types.ObjectId(targetUserId),
+      fromUserId: this.objectId(userId),
+      toUserId: this.objectId(targetUserId),
       status: 'pending',
     });
   }
@@ -99,6 +190,26 @@ export class SocialService {
     request.status = 'accepted';
     await request.save();
     return request;
+  }
+
+  async listFriends(userId: string): Promise<SocialFriend[]> {
+    const connectedUserIds = await this.getConnectedUserIds(userId);
+    if (!connectedUserIds.length) {
+      return [];
+    }
+
+    const users = await this.connectionRequestModel.db
+      .collection('users')
+      .find({ _id: { $in: connectedUserIds.map((id) => this.objectId(id)) } })
+      .toArray();
+
+    return users.map((user: any) => ({
+      id: user._id,
+      username: user.username,
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      bio: user.bio,
+    }));
   }
 
   async listFeed(userId: string): Promise<FeedPost[]> {
@@ -158,13 +269,53 @@ export class SocialService {
   }
 
   async getFollowerIds(userId: string) {
-    const requests = await this.connectionRequestModel
-      .find({
-        toUserId: new Types.ObjectId(userId),
-        status: 'accepted',
-      })
-      .lean();
+    return this.getConnectedUserIds(userId);
+  }
 
-    return requests.map((request) => request.fromUserId.toString());
+  async listMessages(userId: string, targetUserId: string) {
+    if (!(await this.areConnected(userId, targetUserId))) {
+      throw new BadRequestException('Only connected users can view direct messages');
+    }
+
+    return this.directMessageModel
+      .find({
+        $or: [
+          { fromUserId: this.objectId(userId), toUserId: this.objectId(targetUserId) },
+          { fromUserId: this.objectId(targetUserId), toUserId: this.objectId(userId) },
+        ],
+      })
+      .sort({ createdAt: 1 })
+      .lean();
+  }
+
+  async sendDirectMessage(userId: string, targetUserId: string, message: string) {
+    if (userId === targetUserId) {
+      throw new BadRequestException('You cannot message yourself');
+    }
+
+    if (!(await this.areConnected(userId, targetUserId))) {
+      throw new BadRequestException('Only connected users can send direct messages');
+    }
+
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      throw new BadRequestException('Message is required');
+    }
+
+    const created = await this.directMessageModel.create({
+      fromUserId: this.objectId(userId),
+      toUserId: this.objectId(targetUserId),
+      message: trimmedMessage,
+    });
+
+    const sender = await this.usersService.findById(userId);
+    return {
+      _id: created.id,
+      fromUserId: userId,
+      toUserId: targetUserId,
+      message: created.message,
+      fromUsername: sender?.username ?? '',
+      createdAt: created.createdAt,
+    };
   }
 }

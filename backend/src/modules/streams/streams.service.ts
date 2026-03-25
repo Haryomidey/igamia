@@ -261,6 +261,21 @@ export class StreamsService {
     return updatedStream.toObject();
   }
 
+  async forceStopStream(streamId: string) {
+    const stream = await this.requireStream(streamId);
+
+    if (stream.status === 'ended') {
+      return stream.toObject();
+    }
+
+    stream.status = 'ended';
+    stream.endedAt = new Date();
+    stream.participants = [];
+    await stream.save();
+
+    return stream.toObject();
+  }
+
   async saveRecording(
     streamId: string,
     userId: string,
@@ -413,6 +428,11 @@ export class StreamsService {
 
   async removeParticipant(streamId: string, userId: string, participantUserId: string) {
     const stream = await this.requireStream(streamId);
+
+    if (stream.mode === 'pledge') {
+      throw new ForbiddenException('Pledge stream participants cannot remove one another');
+    }
+
     this.ensureHost(stream, userId);
 
     if (participantUserId === userId) {

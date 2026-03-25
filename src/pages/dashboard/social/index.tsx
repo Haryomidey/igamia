@@ -1,45 +1,73 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Gift, Heart, ImagePlus, RefreshCcw, Search, Video } from 'lucide-react';
+import {
+  Gift,
+  Heart,
+  ImagePlus,
+  MessageCircle,
+  RefreshCcw,
+  Search,
+  UserPlus,
+  Users,
+  Video,
+  X,
+} from 'lucide-react';
 import { motion } from 'motion/react';
 import { useSocial, type SocialUser } from '../../../hooks/useSocial';
 import { useWallet } from '../../../hooks/useWallet';
 import { useToast } from '../../../components/ToastProvider';
 import { useMediaUpload } from '../../../hooks/useMediaUpload';
 
+type CommunityTab = 'feed' | 'friends' | 'discover' | 'requests';
+
+type PendingMedia = {
+  secureUrl: string;
+  mediaType: 'image' | 'video';
+  previewName: string;
+};
+
 export default function Social() {
-  const [activeTab, setActiveTab] = useState<'feed' | 'discover' | 'requests'>('feed');
+  const [activeTab, setActiveTab] = useState<CommunityTab>('feed');
   const [selectedGamer, setSelectedGamer] = useState<SocialUser | null>(null);
   const [giftAmount, setGiftAmount] = useState('10');
   const [postText, setPostText] = useState('');
+  const [draftMessage, setDraftMessage] = useState('');
   const [search, setSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
   const toast = useToast();
 
   const {
     discoverUsers,
+    friends,
     requests,
     feed,
+    messages,
     loading,
     error,
     sendRequest,
     acceptRequest,
     fetchSocial,
+    fetchMessages,
     createPost,
+    sendMessage,
     togglePostLike,
   } = useSocial(true);
   const { walletData, gift } = useWallet(true);
   const { uploadMedia } = useMediaUpload();
 
+  const people = activeTab === 'friends' ? friends : discoverUsers;
+
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) {
-      return discoverUsers;
+      return people;
     }
 
-    return discoverUsers.filter((user) =>
+    return people.filter((user) =>
       [user.username, user.fullName, user.bio].join(' ').toLowerCase().includes(query),
     );
-  }, [discoverUsers, search]);
+  }, [people, search]);
 
   useEffect(() => {
     if (error) {
@@ -47,22 +75,35 @@ export default function Social() {
     }
   }, [error, toast]);
 
+  useEffect(() => {
+    if (!selectedGamer?.connected) {
+      return;
+    }
+
+    void fetchMessages(selectedGamer.id);
+  }, [selectedGamer?.connected, selectedGamer?.id]);
+
   const handleCreatePost = async (event: React.FormEvent) => {
     event.preventDefault();
 
     try {
       setIsSubmitting(true);
-      await createPost({ content: postText.trim(), mediaType: 'text' });
+      await createPost({
+        content: postText.trim(),
+        mediaUrl: pendingMedia?.secureUrl,
+        mediaType: pendingMedia?.mediaType ?? 'text',
+      });
       setPostText('');
+      setPendingMedia(null);
       toast.success('Post shared to the community feed.');
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Unable to create post.');
+      toast.error(err?.response?.data?.message ?? err?.message ?? 'Unable to create post.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleUploadMediaPost = async (
+  const handleUploadMediaDraft = async (
     event: React.ChangeEvent<HTMLInputElement>,
     mediaType: 'image' | 'video',
   ) => {
@@ -72,24 +113,23 @@ export default function Social() {
     }
 
     try {
-      setIsSubmitting(true);
+      setIsUploadingMedia(true);
       const uploaded = await uploadMedia({
         file,
         purpose: 'post',
         resourceType: mediaType,
       });
-      await createPost({
-        content: postText.trim(),
-        mediaUrl: uploaded.secureUrl,
+      setPendingMedia({
+        secureUrl: uploaded.secureUrl,
         mediaType,
+        previewName: file.name,
       });
-      setPostText('');
       event.target.value = '';
-      toast.success(`${mediaType === 'image' ? 'Image' : 'Video'} post published.`);
+      toast.success(`${mediaType === 'image' ? 'Image' : 'Video'} attached. Press Post to publish.`);
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to upload post media.');
     } finally {
-      setIsSubmitting(false);
+      setIsUploadingMedia(false);
     }
   };
 
@@ -125,7 +165,6 @@ export default function Social() {
         description: `Gift sent to ${selectedGamer.username}`,
       });
       toast.success(`Gift sent successfully to ${selectedGamer.username}.`);
-      setSelectedGamer(null);
       setGiftAmount('10');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to send gift.');
@@ -134,76 +173,147 @@ export default function Social() {
     }
   };
 
+  const handleSendMessage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedGamer) {
+      return;
+    }
+
+    try {
+      await sendMessage(selectedGamer.id, draftMessage.trim());
+      setDraftMessage('');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to send direct message.');
+    }
+  };
+
+  const tabs: Array<{ id: CommunityTab; label: string; count?: number }> = [
+    { id: 'feed', label: 'Feed' },
+    { id: 'friends', label: 'Friends', count: friends.length },
+    { id: 'discover', label: 'Discover', count: discoverUsers.length },
+    { id: 'requests', label: 'Requests', count: requests.length },
+  ];
+
+  const showFeed = activeTab === 'feed';
+
   return (
-    <div className="space-y-12 pb-12">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-black text-white uppercase italic">Community</h1>
-          <p className="mt-2 text-sm text-zinc-500">
-            A mini social feed for creators and players, plus discovery and requests.
-          </p>
+    <div className="space-y-8 pb-12">
+      <header className="rounded-[3rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(157,124,240,0.16),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6 md:p-8">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl space-y-3">
+            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-brand-accent">Community Feed</span>
+            <h1 className="text-4xl font-black uppercase italic tracking-tighter text-white md:text-5xl">Social Hub</h1>
+            <p className="text-sm leading-relaxed text-zinc-400">
+              Discover is your suggestion list and now shows connected people first. Requests are pending connection
+              invites sent to you. Friends are accepted connections, and only friends can gift or DM.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/20 px-4 py-2.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Wallet</span>
+              <span className="text-sm font-black text-white">${walletData?.wallet.usdBalance.toFixed(2) ?? '0.00'}</span>
+            </div>
+            <button
+              onClick={() => void fetchSocial()}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white transition-all hover:bg-white/10"
+            >
+              <RefreshCcw size={14} />
+              Refresh
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => void fetchSocial()}
-          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all"
-        >
-          <RefreshCcw size={14} />
-          Refresh
-        </button>
       </header>
 
-      <div className="flex gap-6 border-b border-white/10">
-        {[
-          { id: 'feed', label: 'Feed' },
-          { id: 'discover', label: 'Discover' },
-          { id: 'requests', label: `Requests (${requests.length})` },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as 'feed' | 'discover' | 'requests')}
-            className={`pb-4 text-[10px] font-black uppercase tracking-[0.2em] ${
-              activeTab === tab.id ? 'text-white' : 'text-zinc-500'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="sticky top-3 z-20 rounded-[2rem] border border-white/10 bg-[#16122d]/90 p-3 backdrop-blur-xl lg:hidden">
+        <div className="grid grid-cols-4 gap-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-[1.2rem] px-2 py-3 text-[10px] font-black uppercase tracking-[0.18em] transition-all ${
+                activeTab === tab.id ? 'bg-brand-primary text-white' : 'text-zinc-500'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {activeTab === 'feed' && (
-        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="space-y-6">
-            <form onSubmit={handleCreatePost} className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
-                Share With Community
-              </p>
-              <textarea
-                value={postText}
-                onChange={(event) => setPostText(event.target.value)}
-                placeholder="Drop a challenge update, stream highlight, or callout..."
-                className="mt-4 min-h-32 w-full rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-4 text-sm text-white outline-none"
-              />
-              <div className="mt-4 flex flex-wrap gap-3">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
-                  <ImagePlus size={14} />
-                  Image
-                  <input type="file" accept="image/*" className="hidden" onChange={(event) => void handleUploadMediaPost(event, 'image')} />
-                </label>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
-                  <Video size={14} />
-                  Video
-                  <input type="file" accept="video/*" className="hidden" onChange={(event) => void handleUploadMediaPost(event, 'video')} />
-                </label>
+      <section className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_360px]">
+        <div className="space-y-6">
+          <form onSubmit={handleCreatePost} className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Create Post</p>
+                <h2 className="mt-2 text-xl font-black uppercase italic text-white">Share with the feed</h2>
+              </div>
+              <div className="hidden rounded-full border border-white/10 bg-black/20 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 md:block">
+                Feed First
+              </div>
+            </div>
+
+            <textarea
+              value={postText}
+              onChange={(event) => setPostText(event.target.value)}
+              placeholder="Drop a challenge update, stream highlight, or callout..."
+              className="mt-5 min-h-32 w-full rounded-[1.75rem] border border-white/10 bg-black/20 px-5 py-4 text-sm text-white outline-none placeholder:text-zinc-600"
+            />
+
+            {pendingMedia && (
+              <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.75rem] border border-white/10 bg-black/20 px-4 py-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Attached Draft Media</p>
+                  <p className="mt-1 text-sm text-white">{pendingMedia.previewName}</p>
+                  <p className="mt-1 text-xs text-zinc-500">This will post only when you click Post Now.</p>
+                </div>
                 <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="rounded-full bg-brand-primary px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                  type="button"
+                  onClick={() => setPendingMedia(null)}
+                  className="rounded-full border border-white/10 bg-white/5 p-3 text-zinc-400"
                 >
-                  {isSubmitting ? 'Posting...' : 'Post Now'}
+                  <X size={16} />
                 </button>
               </div>
-            </form>
+            )}
 
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
+                <ImagePlus size={14} />
+                {isUploadingMedia ? 'Uploading...' : 'Attach Image'}
+                <input type="file" accept="image/*" className="hidden" onChange={(event) => void handleUploadMediaDraft(event, 'image')} />
+              </label>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
+                <Video size={14} />
+                {isUploadingMedia ? 'Uploading...' : 'Attach Video'}
+                <input type="file" accept="video/*" className="hidden" onChange={(event) => void handleUploadMediaDraft(event, 'video')} />
+              </label>
+              <button
+                type="submit"
+                disabled={isSubmitting || isUploadingMedia || (!postText.trim() && !pendingMedia)}
+                className="rounded-full bg-brand-primary px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+              >
+                {isSubmitting ? 'Posting...' : 'Post Now'}
+              </button>
+            </div>
+          </form>
+
+          <div className="grid gap-4 sm:grid-cols-4">
+            {[
+              { label: 'Feed Posts', value: feed.length },
+              { label: 'Friends', value: friends.length },
+              { label: 'Discover', value: discoverUsers.length },
+              { label: 'Requests', value: requests.length },
+            ].map((item) => (
+              <div key={item.label} className="rounded-[2rem] border border-white/10 bg-white/5 p-5">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{item.label}</p>
+                <p className="mt-3 text-3xl font-black italic text-white">{item.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {showFeed && (
             <div className="space-y-5">
               {feed.map((post) => (
                 <motion.article
@@ -237,9 +347,7 @@ export default function Social() {
                     <button
                       onClick={() => void togglePostLike(post._id)}
                       className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-widest ${
-                        post.likedByMe
-                          ? 'bg-brand-primary/20 text-brand-primary'
-                          : 'bg-white/5 text-zinc-300'
+                        post.likedByMe ? 'bg-brand-primary/20 text-brand-primary' : 'bg-white/5 text-zinc-300'
                       }`}
                     >
                       <Heart size={14} />
@@ -254,137 +362,242 @@ export default function Social() {
                 </div>
               )}
             </div>
-          </div>
-
-          <div className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
-              Wallet Snapshot
-            </p>
-            <p className="mt-3 text-3xl font-black italic text-white">
-              ${walletData?.wallet.usdBalance.toFixed(2) ?? '0.00'}
-            </p>
-            <p className="mt-2 text-sm text-zinc-400">Use gifts and posts to stay active in the feed.</p>
-          </div>
+          )}
         </div>
-      )}
 
-      {activeTab === 'discover' && (
-        <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
-          <div className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-              <input
-                type="text"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search people"
-                className="w-full rounded-2xl border border-white/10 bg-white/5 py-4 pl-14 pr-6 text-white"
-              />
+        <aside className="space-y-5">
+          <div className="hidden rounded-[2.5rem] border border-white/10 bg-white/5 p-3 lg:block">
+            <div className="grid grid-cols-2 gap-2">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-[1.25rem] px-3 py-3 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
+                    activeTab === tab.id ? 'bg-brand-primary text-white' : 'text-zinc-500 hover:text-zinc-300'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
-            {filteredUsers.map((gamer) => (
-              <button
-                key={gamer.id}
-                onClick={() => setSelectedGamer(gamer)}
-                className="flex w-full items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 text-left"
-              >
-                <img
-                  src={gamer.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${gamer.username}`}
-                  alt={gamer.username}
-                  className="h-14 w-14 rounded-full object-cover"
-                />
-                <div>
-                  <p className="font-black text-white">{gamer.fullName || gamer.username}</p>
-                  <p className="text-[10px] uppercase tracking-widest text-zinc-500">@{gamer.username}</p>
-                </div>
-              </button>
-            ))}
           </div>
 
-          <div className="rounded-[3rem] border border-white/10 bg-white/5 p-12 text-center">
-            {selectedGamer ? (
-              <>
-                <p className="text-xl font-black uppercase italic text-white">
-                  {selectedGamer.fullName || selectedGamer.username}
+          {(activeTab === 'discover' || activeTab === 'friends') && (
+            <div className="space-y-4 rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
+                  {activeTab === 'friends' ? 'Connected Users' : 'Discover Players'}
                 </p>
-                <p className="mt-3 text-zinc-400">{selectedGamer.bio || 'Ready to connect on iGamia.'}</p>
-                <div className="mt-8 flex flex-wrap justify-center gap-4">
+                <h3 className="mt-3 text-xl font-black uppercase italic text-white">
+                  {activeTab === 'friends' ? 'Your friends list' : 'Suggestions and connections'}
+                </h3>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={`Search ${activeTab === 'friends' ? 'friends' : 'people'}`}
+                  className="w-full rounded-2xl border border-white/10 bg-black/20 py-4 pl-14 pr-6 text-white outline-none placeholder:text-zinc-600"
+                />
+              </div>
+
+              <div className="space-y-3">
+                {filteredUsers.map((gamer) => (
+                  <button
+                    key={gamer.id}
+                    onClick={() => setSelectedGamer(gamer)}
+                    className="flex w-full items-center gap-4 rounded-[1.75rem] border border-white/10 bg-black/20 p-4 text-left transition-all hover:bg-white/5"
+                  >
+                    <img
+                      src={gamer.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${gamer.username}`}
+                      alt={gamer.username}
+                      className="h-14 w-14 rounded-full object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-black text-white">{gamer.fullName || gamer.username}</p>
+                      <p className="text-[10px] uppercase tracking-widest text-zinc-500">@{gamer.username}</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {gamer.connected && (
+                          <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-300">
+                            Connected
+                          </span>
+                        )}
+                        {gamer.pendingRequestSent && (
+                          <span className="rounded-full bg-white/10 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-zinc-400">
+                            Request Sent
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {!filteredUsers.length && (
+                  <div className="rounded-[1.75rem] border border-white/10 bg-black/20 px-5 py-8 text-center text-zinc-500">
+                    No users found.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'requests' && (
+            <div className="space-y-4 rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Pending Requests</p>
+                <h3 className="mt-3 text-xl font-black uppercase italic text-white">Connection invites</h3>
+              </div>
+
+              <div className="space-y-3">
+                {requests.map((request) => (
+                  <div key={request._id} className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
+                    <p className="font-black text-white">{request.fromUserId?.fullName ?? request.fromUserId?.username}</p>
+                    <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">@{request.fromUserId?.username}</p>
+                    <button
+                      onClick={() => void handleAcceptRequest(request._id)}
+                      className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white"
+                    >
+                      <UserPlus size={14} />
+                      Accept
+                    </button>
+                  </div>
+                ))}
+                {!requests.length && (
+                  <div className="rounded-[1.75rem] border border-white/10 bg-black/20 px-5 py-8 text-center text-zinc-500">
+                    No pending requests.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'feed' && (
+            <div className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">How It Works</p>
+              <div className="mt-4 space-y-3 text-sm leading-relaxed text-zinc-400">
+                <p><span className="font-black text-white">Discover:</span> suggestions from the social discovery endpoint, now ordered with connected users first.</p>
+                <p><span className="font-black text-white">Requests:</span> incoming pending connection requests waiting for your approval.</p>
+                <p><span className="font-black text-white">Friends:</span> accepted connections. Only these users can receive gifts from you or chat by DM.</p>
+              </div>
+            </div>
+          )}
+        </aside>
+      </section>
+
+      {selectedGamer && (
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#0f0b21]/90 p-6 backdrop-blur-md">
+          <div className="flex min-h-full items-center justify-center">
+            <div className="w-full max-w-2xl rounded-[3rem] border border-white/10 bg-[#1a1635] p-8">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Player Actions</p>
+                  <h3 className="mt-3 text-2xl font-black uppercase italic text-white">
+                    {selectedGamer.fullName || selectedGamer.username}
+                  </h3>
+                  <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+                    {selectedGamer.bio || 'Ready to connect on iGamia.'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedGamer(null)}
+                  className="rounded-full border border-white/10 bg-white/5 p-3 text-zinc-400"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                {selectedGamer.connected ? (
+                  <span className="rounded-full bg-emerald-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-300">
+                    Connected
+                  </span>
+                ) : selectedGamer.pendingRequestSent ? (
+                  <span className="rounded-full bg-white/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                    Request Sent
+                  </span>
+                ) : (
                   <button
                     onClick={() => void handleSendRequest(selectedGamer.id)}
-                    className="rounded-2xl bg-brand-primary px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white"
+                    className="rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white"
                   >
                     Send Request
                   </button>
-                  <button
-                    onClick={() => setSelectedGamer(selectedGamer)}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-8 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white"
-                  >
-                    Send Gift
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="text-zinc-500">Select a player to connect.</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'requests' && (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          {requests.map((request) => (
-            <div key={request._id} className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
-              <p className="font-black text-white">{request.fromUserId?.fullName ?? request.fromUserId?.username}</p>
-              <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">
-                @{request.fromUserId?.username}
-              </p>
-              <button
-                onClick={() => void handleAcceptRequest(request._id)}
-                className="mt-5 rounded-2xl bg-brand-primary px-6 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white"
-              >
-                Accept
-              </button>
-            </div>
-          ))}
-          {!requests.length && (
-            <div className="rounded-[2rem] border border-white/10 bg-white/5 px-6 py-12 text-center text-zinc-500">
-              No pending requests.
-            </div>
-          )}
-        </div>
-      )}
-
-      {selectedGamer && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0f0b21]/90 p-6 backdrop-blur-md">
-          <div className="w-full max-w-md rounded-[3rem] border border-white/10 bg-[#1a1635] p-10">
-            <h3 className="text-2xl font-black uppercase italic text-white">
-              Gift {selectedGamer.fullName || selectedGamer.username}
-            </h3>
-            <form onSubmit={handleGift} className="mt-8 space-y-6">
-              <input
-                type="number"
-                min="1"
-                step="0.01"
-                value={giftAmount}
-                onChange={(event) => setGiftAmount(event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white"
-              />
-              <div className="flex gap-4">
-                <button
-                  type="button"
-                  onClick={() => setSelectedGamer(null)}
-                  className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white"
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 rounded-2xl bg-brand-primary px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
-                >
-                  <Gift size={14} className="inline-block" /> Send
-                </button>
+                )}
               </div>
-            </form>
+
+              {selectedGamer.connected && (
+                <div className="mt-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+                  <form onSubmit={handleGift} className="rounded-[2rem] border border-white/10 bg-black/20 p-5">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Send Gift</p>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={giftAmount}
+                      onChange={(event) => setGiftAmount(event.target.value)}
+                      className="mt-4 w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
+                    >
+                      <Gift size={14} />
+                      Send Gift
+                    </button>
+                  </form>
+
+                  <div className="rounded-[2rem] border border-white/10 bg-black/20 p-5">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Direct Messages</p>
+                    <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+                      {messages.map((message) => (
+                        <div
+                          key={message._id}
+                          className={`rounded-2xl px-4 py-3 text-sm ${
+                            message.toUserId === selectedGamer.id
+                              ? 'ml-10 bg-brand-primary/20 text-white'
+                              : 'mr-10 bg-white/10 text-zinc-200'
+                          }`}
+                        >
+                          {message.message}
+                        </div>
+                      ))}
+                      {!messages.length && (
+                        <div className="rounded-2xl bg-white/5 px-4 py-6 text-center text-zinc-500">
+                          No messages yet.
+                        </div>
+                      )}
+                    </div>
+
+                    <form onSubmit={handleSendMessage} className="mt-4 flex gap-3">
+                      <input
+                        type="text"
+                        value={draftMessage}
+                        onChange={(event) => setDraftMessage(event.target.value)}
+                        placeholder="Send a direct message"
+                        className="min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!draftMessage.trim()}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
+                      >
+                        <MessageCircle size={14} />
+                        Send
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
+
+              {!selectedGamer.connected && (
+                <div className="mt-8 rounded-[2rem] border border-white/10 bg-black/20 p-5 text-sm leading-relaxed text-zinc-400">
+                  Gifts and direct messages are available only after the connection request is accepted.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

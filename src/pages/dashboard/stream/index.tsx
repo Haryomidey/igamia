@@ -47,6 +47,32 @@ function truncateText(value: string, maxLength: number) {
   return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }
 
+function getStreamConnectionErrorMessage(error: unknown) {
+  const message =
+    (error as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+    (error as { message?: string })?.message;
+
+  if (!message) {
+    return 'Unable to connect to the live room.';
+  }
+
+  const normalizedMessage = message.toLowerCase();
+  if (
+    normalizedMessage.includes('device') ||
+    normalizedMessage.includes('permission') ||
+    normalizedMessage.includes('camera') ||
+    normalizedMessage.includes('microphone')
+  ) {
+    return 'Connected to the live room, but camera or microphone access was blocked.';
+  }
+
+  return message;
+}
+
+function wait(durationMs: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+}
+
 
 export default function LiveStream() {
   const navigate = useNavigate();
@@ -84,6 +110,7 @@ export default function LiveStream() {
     startStream,
     getConnectionDetails,
     saveRecording,
+    disconnect,
   } = useStream();
   const { discoverUsers, sendRequest, fetchSocial } = useSocial(true);
   const { fetchMatch, submitResultClaim } = usePledges(false);
@@ -105,6 +132,7 @@ export default function LiveStream() {
   const [activityOverlays, setActivityOverlays] = useState<ActivityOverlay[]>([]);
   const [likeTicker, setLikeTicker] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
+  const [roomReconnectKey, setRoomReconnectKey] = useState(0);
   const [mediaStates, setMediaStates] = useState<Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>>({});
   const [pledgeMatch, setPledgeMatch] = useState<MatchActivity | null>(null);
   const [isMicMuted, setIsMicMuted] = useState(false);
@@ -139,6 +167,7 @@ export default function LiveStream() {
   const isParticipantView = currentParticipant?.role === 'host' || currentParticipant?.role === 'guest';
   const isInvitedPending = currentParticipant?.role === 'invited';
   const isCoStreamerView = currentParticipant?.role === 'guest' && !isHostView;
+  const canRemoveParticipants = isHostView && !isPledgeStream;
   const pendingInvites = useMemo(
     () => (stream?.participants ?? []).filter((participant) => participant.role === 'invited'),
     [stream?.participants],
@@ -241,8 +270,7 @@ export default function LiveStream() {
       !recentViewerJoin ||
       recentViewerJoin.streamId !== resolvedStreamId ||
       !recentViewerJoin.joinedUsername ||
-      recentViewerJoin.joinedUsername === user?.username ||
-      isHostView
+      recentViewerJoin.joinedUsername === user?.username
     ) {
       return;
     }
@@ -257,7 +285,7 @@ export default function LiveStream() {
     }, 5000);
 
     return () => window.clearTimeout(timeout);
-  }, [isHostView, recentViewerJoin, resolvedStreamId, user?.username]);
+  }, [recentViewerJoin, resolvedStreamId, user?.username]);
 
   useEffect(() => {
     if (!recentMediaState || recentMediaState.streamId !== resolvedStreamId) {
@@ -309,8 +337,12 @@ export default function LiveStream() {
     setActivityOverlays([]);
     setLikeTicker(null);
     toast.info('Live stream has been ended.', { title: 'Live Ended' });
+    if (recentStreamStopped.redirectToDispute && isParticipantView && stream?.matchId) {
+      navigate(`/disputes/${stream.matchId}`);
+      return;
+    }
     navigate('/home');
-  }, [navigate, recentStreamStopped, resolvedStreamId, toast]);
+  }, [isParticipantView, navigate, recentStreamStopped, resolvedStreamId, stream?.matchId, toast]);
 
   useEffect(() => {
     if (!resolvedStreamId || !user?._id || !user.username) {
@@ -347,90 +379,133 @@ export default function LiveStream() {
 
     const connectToRoom = async () => {
       setConnectionStatus('connecting');
-      try {
-        const details = await getConnectionDetails(resolvedStreamId);
-        const room = new Room({ adaptiveStream: true, dynacast: true });
-        livekitRoomRef.current = room;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        let room: Room | null = null;
+        try {
+          const details = await getConnectionDetails(resolvedStreamId);
+          room = new Room({ adaptiveStream: true, dynacast: true });
+          livekitRoomRef.current = room;
 
-        room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-          const id = `${participant.sid}-${publication.trackSid}`;
-          if (track.kind === Track.Kind.Video) {
-            addVideoTrack(track, participant, false);
+          room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+            const id = `${participant.sid}-${publication.trackSid}`;
+            if (track.kind === Track.Kind.Video) {
+              addVideoTrack(track, participant, false);
+              return;
+            }
+            if (track.kind === Track.Kind.Audio) {
+              setAudioTracks((current) => [...current.filter((entry) => entry.id !== id), { id, track }]);
+            }
+          });
+
+          room.on(RoomEvent.TrackUnsubscribed, (_track, publication, participant) => {
+            removeTrack(participant, publication);
+          });
+
+          room.on(RoomEvent.LocalTrackPublished, (publication, participant) => {
+            if (publication.track?.kind === Track.Kind.Video) {
+              addVideoTrack(publication.track, participant, true);
+            }
+          });
+
+          room.on(RoomEvent.LocalTrackUnpublished, (publication, participant) => {
+            removeTrack(participant, publication);
+          });
+
+          room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+            setVideoTiles((current) => current.filter((tile) => !tile.id.startsWith(`${participant.sid}-`)));
+            setAudioTracks((current) => current.filter((entry) => !entry.id.startsWith(`${participant.sid}-`)));
+          });
+
+          room.on(RoomEvent.Reconnecting, () => {
+            setConnectionStatus('connecting');
+          });
+
+          room.on(RoomEvent.Reconnected, () => {
+            setConnectionStatus('connected');
+          });
+
+          room.on(RoomEvent.Disconnected, () => {
+            setConnectionStatus((current) => (disposed ? current : 'idle'));
+            setVideoTiles([]);
+            setAudioTracks([]);
+          });
+
+          await room.connect(details.url, details.token);
+          if (disposed) {
+            await room.disconnect();
             return;
           }
-          if (track.kind === Track.Kind.Audio) {
-            setAudioTracks((current) => [...current.filter((entry) => entry.id !== id), { id, track }]);
+
+          room.remoteParticipants.forEach((participant) => {
+            participant.trackPublications.forEach((publication) => {
+              if (!publication.track) {
+                return;
+              }
+              if (publication.track.kind === Track.Kind.Video) {
+                addVideoTrack(publication.track, participant, false);
+                return;
+              }
+              if (publication.track.kind === Track.Kind.Audio) {
+                const id = `${participant.sid}-${publication.trackSid}`;
+                setAudioTracks((current) => [...current.filter((entry) => entry.id !== id), { id, track: publication.track }]);
+              }
+            });
+          });
+
+          room.localParticipant.videoTrackPublications.forEach((publication) => {
+            if (publication.track) {
+              addVideoTrack(publication.track, room.localParticipant, true);
+            }
+          });
+
+          setConnectionStatus('connected');
+
+          if (details.canPublish) {
+            try {
+              await room.localParticipant.setCameraEnabled(true);
+              await room.localParticipant.setMicrophoneEnabled(true);
+              setIsMicMuted(false);
+              setIsCameraPaused(false);
+              updateMediaState(resolvedStreamId, {
+                isMuted: false,
+                isCameraOff: false,
+              });
+            } catch (mediaError) {
+              setIsMicMuted(true);
+              setIsCameraPaused(true);
+              updateMediaState(resolvedStreamId, {
+                isMuted: true,
+                isCameraOff: true,
+              });
+              toast.warning(getStreamConnectionErrorMessage(mediaError), {
+                title: 'Media Permission Needed',
+              });
+            }
           }
-        });
 
-        room.on(RoomEvent.TrackUnsubscribed, (_track, publication, participant) => {
-          removeTrack(participant, publication);
-        });
-
-        room.on(RoomEvent.LocalTrackPublished, (publication, participant) => {
-          if (publication.track?.kind === Track.Kind.Video) {
-            addVideoTrack(publication.track, participant, true);
-          }
-        });
-
-        room.on(RoomEvent.LocalTrackUnpublished, (publication, participant) => {
-          removeTrack(participant, publication);
-        });
-
-        room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-          setVideoTiles((current) => current.filter((tile) => !tile.id.startsWith(`${participant.sid}-`)));
-          setAudioTracks((current) => current.filter((entry) => !entry.id.startsWith(`${participant.sid}-`)));
-        });
-
-        room.on(RoomEvent.Disconnected, () => {
-          setConnectionStatus('idle');
-          setVideoTiles([]);
-          setAudioTracks([]);
-        });
-
-        await room.connect(details.url, details.token);
-        if (disposed) {
-          await room.disconnect();
           return;
-        }
-
-        if (details.canPublish) {
-          await room.localParticipant.setCameraEnabled(true);
-          await room.localParticipant.setMicrophoneEnabled(true);
-          setIsMicMuted(false);
-          setIsCameraPaused(false);
-          updateMediaState(resolvedStreamId, {
-            isMuted: false,
-            isCameraOff: false,
-          });
-        }
-
-        room.remoteParticipants.forEach((participant) => {
-          participant.trackPublications.forEach((publication) => {
-            if (!publication.track) {
-              return;
-            }
-            if (publication.track.kind === Track.Kind.Video) {
-              addVideoTrack(publication.track, participant, false);
-              return;
-            }
-            if (publication.track.kind === Track.Kind.Audio) {
-              const id = `${participant.sid}-${publication.trackSid}`;
-              setAudioTracks((current) => [...current.filter((entry) => entry.id !== id), { id, track: publication.track }]);
-            }
-          });
-        });
-
-        room.localParticipant.videoTrackPublications.forEach((publication) => {
-          if (publication.track) {
-            addVideoTrack(publication.track, room.localParticipant, true);
+        } catch (error) {
+          if (room) {
+            await room.disconnect();
           }
-        });
+          if (livekitRoomRef.current === room) {
+            livekitRoomRef.current = null;
+          }
 
-        setConnectionStatus('connected');
-      } catch (err: any) {
-        setConnectionStatus('error');
-        toast.error(err?.response?.data?.message ?? 'Unable to connect to the live room.');
+          if (disposed) {
+            return;
+          }
+
+          if (attempt === 0) {
+            await wait(800);
+            continue;
+          }
+
+          setConnectionStatus('error');
+          toast.error(getStreamConnectionErrorMessage(error), {
+            title: 'Live Connection Error',
+          });
+        }
       }
     };
 
@@ -444,7 +519,7 @@ export default function LiveStream() {
       livekitRoomRef.current = null;
       void room?.disconnect();
     };
-  }, [currentParticipant?.role, resolvedStreamId, toast, user?._id, user?.username]);
+  }, [resolvedStreamId, roomReconnectKey, toast, user?._id, user?.username]);
 
   useEffect(() => {
     const container = audioContainerRef.current;
@@ -694,6 +769,28 @@ export default function LiveStream() {
     delete stageVideoElementsRef.current[participantUserId];
   };
 
+  const handleReconnectToLive = async () => {
+    if (!resolvedStreamId) {
+      return;
+    }
+
+    try {
+      setConnectionStatus('connecting');
+      setVideoTiles([]);
+      setAudioTracks([]);
+      livekitRoomRef.current?.disconnect();
+      livekitRoomRef.current = null;
+      disconnect();
+      await fetchStream(resolvedStreamId);
+      connect();
+      joinRoom(resolvedStreamId);
+      setRoomReconnectKey((current) => current + 1);
+    } catch (err: any) {
+      setConnectionStatus('error');
+      toast.error(err?.response?.data?.message ?? 'Unable to reconnect to the live.');
+    }
+  };
+
   const persistRecordingBlob = async (blob: Blob) => {
     if (!resolvedStreamId) {
       return;
@@ -903,7 +1000,7 @@ export default function LiveStream() {
           participants={stream?.participants ?? []}
           videoTiles={videoTiles}
           mediaStates={mediaStates}
-          isHostView={isHostView}
+          canRemoveParticipants={canRemoveParticipants}
           currentUserId={user?._id}
           heroImage={heroImage}
           onVideoElementChange={handleStageVideoElementChange}
@@ -930,6 +1027,17 @@ export default function LiveStream() {
                   ? 'Your live camera feed will appear here as soon as publishing starts.'
                   : 'The streamer feed will appear here as soon as the host camera is live.'}
             </p>
+            {connectionStatus !== 'connected' && (
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleReconnectToLive();
+                }}
+                className="pointer-events-auto mt-4 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white backdrop-blur-md transition-colors hover:bg-white/20 sm:text-xs"
+              >
+                {connectionStatus === 'connecting' ? 'Reconnecting...' : 'Reconnect'}
+              </button>
+            )}
           </div>
         )}
 
@@ -940,6 +1048,7 @@ export default function LiveStream() {
           isCoStreamerView={isCoStreamerView}
           isInvitedPending={isInvitedPending}
           isPledgeStream={isPledgeStream}
+          canRemoveParticipants={canRemoveParticipants}
           removableParticipants={removableParticipants}
           connectionStatus={connectionStatus}
           isMicMuted={isMicMuted}
@@ -1017,65 +1126,65 @@ export default function LiveStream() {
         </div>
 
         {isPledgeStream && isParticipantView && pledgeMatch && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-28 z-20 px-4 sm:bottom-32 sm:px-6 lg:px-8">
+          <div className="pointer-events-none absolute right-4 top-24 z-20 sm:right-6 sm:top-28 lg:right-8">
             <div
-              className="pointer-events-auto rounded-[1.75rem] border border-brand-primary/20 bg-black/55 p-4 backdrop-blur-md"
+              className="pointer-events-auto inline-flex max-w-[min(82vw,34rem)] flex-wrap items-center justify-end gap-2 rounded-full border border-white/10 bg-black/45 px-2.5 py-2 shadow-xl backdrop-blur-md"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.24em] text-brand-accent">
-                    Pledge Result Center
-                  </p>
-                  <p className="mt-2 text-sm text-zinc-200">
-                    {pledgeMatch.status === 'settled'
-                      ? pledgeMatch.isDraw
-                        ? 'This match ended in a draw.'
-                        : pledgeMatch.winnerUserId === user?._id
-                          ? 'You have been recorded as the winner.'
-                          : 'This match has been settled.'
-                      : pledgeMatch.status === 'disputed'
-                        ? 'This match is in dispute. Continue the case in the dispute page.'
-                        : pledgeMatch.resultClaim?.status === 'pending'
-                          ? `${pledgeMatch.resultClaim.claimedByUsername} submitted a ${pledgeMatch.resultClaim.outcome} claim.`
-                          : 'Only streamers can submit win, loss, draw, or dispute from here.'}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {pledgeMatch.status !== 'settled' && pledgeMatch.status !== 'disputed' && (
-                    <>
-                      <button
-                        onClick={() => void handlePledgeClaim('win')}
-                        className="rounded-full bg-emerald-500/20 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300"
-                      >
-                        Claim Win
-                      </button>
-                      <button
-                        onClick={() => void handlePledgeClaim('loss')}
-                        className="rounded-full bg-rose-500/20 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-rose-200"
-                      >
-                        Claim Loss
-                      </button>
-                      <button
-                        onClick={() => void handlePledgeClaim('draw')}
-                        className="rounded-full bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white"
-                      >
-                        Claim Draw
-                      </button>
-                    </>
-                  )}
+              <span className="rounded-full bg-white/10 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-200 sm:text-[9px]">
+                {pledgeMatch.status === 'settled'
+                  ? pledgeMatch.isDraw
+                    ? 'Draw'
+                    : pledgeMatch.winnerUserId === user?._id
+                      ? 'Won'
+                      : 'Settled'
+                  : pledgeMatch.status === 'disputed'
+                    ? 'Disputed'
+                    : pledgeMatch.resultClaim?.status === 'pending'
+                      ? pledgeMatch.resultClaim.claimedByUserId === user?._id
+                        ? 'Waiting'
+                        : `${pledgeMatch.resultClaim.outcome} pending`
+                      : 'Result'}
+              </span>
+              {pledgeMatch.status !== 'settled' &&
+                pledgeMatch.status !== 'disputed' &&
+                pledgeMatch.resultClaim?.status !== 'pending' && (
+                <>
                   <button
-                    onClick={() =>
-                      pledgeMatch.status === 'disputed'
-                        ? navigate(`/disputes/${pledgeMatch._id}`)
-                        : void handlePledgeClaim('dispute')
-                    }
-                    className="rounded-full bg-brand-primary/20 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-brand-primary"
+                    onClick={() => void handlePledgeClaim('win')}
+                    className="rounded-full bg-emerald-500/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-emerald-300 sm:text-[9px]"
                   >
-                    {pledgeMatch.status === 'disputed' ? 'Open Dispute' : 'Dispute'}
+                    Win
                   </button>
-                </div>
-              </div>
+                  <button
+                    onClick={() => void handlePledgeClaim('loss')}
+                    className="rounded-full bg-rose-500/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-rose-200 sm:text-[9px]"
+                  >
+                    Lose
+                  </button>
+                  <button
+                    onClick={() => void handlePledgeClaim('draw')}
+                    className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-white sm:text-[9px]"
+                  >
+                    Draw
+                  </button>
+                </>
+              )}
+              {pledgeMatch.resultClaim?.status === 'pending' && pledgeMatch.resultClaim.claimedByUserId === user?._id && (
+                <span className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-300 sm:text-[9px]">
+                  Waiting for other streamer
+                </span>
+              )}
+              <button
+                onClick={() =>
+                  pledgeMatch.status === 'disputed'
+                    ? navigate(`/disputes/${pledgeMatch._id}`)
+                    : void handlePledgeClaim('dispute')
+                }
+                className="rounded-full bg-brand-primary/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-brand-primary sm:text-[9px]"
+              >
+                {pledgeMatch.status === 'disputed' ? 'Open' : 'Dispute'}
+              </button>
             </div>
           </div>
         )}

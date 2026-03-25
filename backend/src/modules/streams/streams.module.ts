@@ -35,6 +35,6 @@ import { MediaModule } from '../media/media.module';
   ],
   controllers: [StreamsController],
   providers: [StreamsService, StreamsGateway, WsJwtGuard],
-  exports: [StreamsService],
+  exports: [StreamsService, StreamsGateway],
 })
 export class StreamsModule {}

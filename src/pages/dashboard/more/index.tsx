@@ -26,8 +26,8 @@ export default function More() {
     { icon: Gamepad2, title: 'Game Library', desc: 'Browse games and create or join active pledges.', color: 'text-white', path: '/library' },
     { icon: History, title: 'History', desc: 'See recorded streams and recent live activity.', color: 'text-zinc-300', path: '/history' },
     { icon: Wallet, title: 'Wallet', desc: 'Track balances, gifts, and withdrawals.', color: 'text-emerald-500', path: '/wallet' },
-    { icon: Pickaxe, title: 'Coin Mining', desc: 'Mine IGC and stay active on the platform.', color: 'text-amber-500', path: '/mining' },
-    { icon: PlayCircle, title: 'Watch & Earn', desc: 'Earn from supported watch tasks and video activities.', color: 'text-rose-400', path: '/watch-earn' },
+    { icon: Pickaxe, title: 'Daily Rewards', desc: 'Open the scheduled watch rewards queue and claim IGC.', color: 'text-amber-500', path: '/mining' },
+    { icon: PlayCircle, title: 'Watch Streams', desc: 'Focus on live streams and stream-based activity from here.', color: 'text-rose-400', path: '/watch-earn' },
     { icon: Users, title: 'Community', desc: 'Open the social feed, discover people, and connect.', color: 'text-sky-400', path: '/social' },
   ];
 

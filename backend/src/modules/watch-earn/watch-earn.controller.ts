@@ -13,6 +13,14 @@ export class WatchEarnController {
     return this.watchEarnService.getTodayVideos(user.sub);
   }
 
+  @Post('videos/:videoId/start')
+  startVideo(
+    @CurrentUser() user: { sub: string },
+    @Param('videoId') videoId: string,
+  ) {
+    return this.watchEarnService.startVideo(user.sub, videoId);
+  }
+
   @Post('videos/:videoId/complete')
   completeVideo(
     @CurrentUser() user: { sub: string },

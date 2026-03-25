@@ -8,9 +8,16 @@ export type WatchEarnVideo = {
   videoUrl: string;
   thumbnailUrl: string;
   rewardIgc: number;
+  durationSeconds: number;
   active: boolean;
   daySlot: number;
   completed: boolean;
+  unlocked: boolean;
+  availableNow: boolean;
+  availableAt: string | null;
+  startedWatching: boolean;
+  watchStartedAt: string | null;
+  eligibleToClaimAt: string | null;
 };
 
 export type WatchEarnToday = {
@@ -18,6 +25,10 @@ export type WatchEarnToday = {
   totalVideosPerDay: number;
   completedCount: number;
   totalEarnedIgc: number;
+  waitIntervalMinutes: number;
+  nextVideoAvailableAt: string | null;
+  canWatchNow: boolean;
+  serverTime: string;
   videos: WatchEarnVideo[];
 };
 
@@ -48,6 +59,12 @@ export function useWatchEarn(autoLoad = true) {
     return data;
   };
 
+  const startVideo = async (videoId: string) => {
+    const { data } = await api.post(`/watch-earn/videos/${videoId}/start`);
+    await fetchTodayVideos();
+    return data;
+  };
+
   useEffect(() => {
     if (autoLoad) {
       void fetchTodayVideos();
@@ -59,6 +76,7 @@ export function useWatchEarn(autoLoad = true) {
     loading,
     error,
     fetchTodayVideos,
+    startVideo,
     completeVideo,
   };
 }

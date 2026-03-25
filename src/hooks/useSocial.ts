@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { api } from '../api/axios';
+import { useEffect, useRef, useState } from 'react';
+import { io, type Socket } from 'socket.io-client';
+import { api, getAccessToken, socialSocketUrl } from '../api/axios';
 
 export type SocialUser = {
   id: string;
@@ -8,6 +9,9 @@ export type SocialUser = {
   fullName: string;
   avatarUrl: string;
   bio: string;
+  connected?: boolean;
+  pendingRequestSent?: boolean;
+  pendingRequestReceived?: boolean;
 };
 
 export type SocialRequest = {
@@ -36,26 +40,77 @@ export type SocialPost = {
   createdAt?: string;
 };
 
+export type DirectMessage = {
+  _id: string;
+  fromUserId: string;
+  toUserId: string;
+  fromUsername?: string;
+  message: string;
+  createdAt?: string;
+};
+
 export function useSocial(autoLoad = true) {
   const [discoverUsers, setDiscoverUsers] = useState<SocialUser[]>([]);
+  const [friends, setFriends] = useState<SocialUser[]>([]);
   const [requests, setRequests] = useState<SocialRequest[]>([]);
   const [feed, setFeed] = useState<SocialPost[]>([]);
+  const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [loading, setLoading] = useState(autoLoad);
   const [error, setError] = useState<string | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+
+  const connect = () => {
+    if (socketRef.current || !getAccessToken()) {
+      return socketRef.current;
+    }
+
+    socketRef.current = io(socialSocketUrl, {
+      transports: ['websocket'],
+      auth: {
+        token: getAccessToken(),
+      },
+    });
+
+    socketRef.current.on('social:postCreated', (payload: SocialPost) => {
+      setFeed((current) => [payload, ...current.filter((post) => post._id !== payload._id)]);
+    });
+
+    socketRef.current.on('social:directMessageReceived', (payload: DirectMessage) => {
+      setMessages((current) => [...current, payload]);
+    });
+
+    socketRef.current.on('social:requestReceived', () => {
+      void fetchSocial();
+    });
+
+    socketRef.current.on('social:requestAccepted', () => {
+      void fetchSocial();
+    });
+
+    return socketRef.current;
+  };
+
+  const disconnect = () => {
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+  };
 
   const fetchSocial = async () => {
     try {
       setLoading(true);
-      const [{ data: discoverData }, { data: requestsData }, { data: feedData }] = await Promise.all([
-        api.get<SocialUser[]>('/social/discover'),
-        api.get<SocialRequest[]>('/social/requests'),
-        api.get<SocialPost[]>('/social/feed'),
-      ]);
+      const [{ data: discoverData }, { data: requestsData }, { data: feedData }, { data: friendsData }] =
+        await Promise.all([
+          api.get<SocialUser[]>('/social/discover'),
+          api.get<SocialRequest[]>('/social/requests'),
+          api.get<SocialPost[]>('/social/feed'),
+          api.get<SocialUser[]>('/social/friends'),
+        ]);
       setDiscoverUsers(discoverData);
       setRequests(requestsData);
       setFeed(feedData);
+      setFriends(friendsData);
       setError(null);
-      return { discoverData, requestsData, feedData };
+      return { discoverData, requestsData, feedData, friendsData };
     } catch (err: any) {
       const message = err?.response?.data?.message ?? 'Unable to fetch community data';
       setError(message);
@@ -63,6 +118,12 @@ export function useSocial(autoLoad = true) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchMessages = async (targetUserId: string) => {
+    const { data } = await api.get<DirectMessage[]>(`/social/messages/${targetUserId}`);
+    setMessages(data);
+    return data;
   };
 
   const sendRequest = async (targetUserId: string) => {
@@ -82,8 +143,29 @@ export function useSocial(autoLoad = true) {
     mediaUrl?: string;
     mediaType?: 'text' | 'image' | 'video';
   }) => {
+    const socket = connect();
+    if (socket) {
+      const data = await new Promise<SocialPost>((resolve, reject) => {
+        socket.timeout(10000).emit('social:createPost', payload, (err: Error | null, response: SocialPost) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve(response);
+        });
+      });
+      setFeed((current) => [data, ...current.filter((post) => post._id !== data._id)]);
+      return data;
+    }
+
     const { data } = await api.post('/social/posts', payload);
     await fetchSocial();
+    return data;
+  };
+
+  const sendMessage = async (targetUserId: string, message: string) => {
+    const { data } = await api.post<DirectMessage>(`/social/messages/${targetUserId}`, { message });
+    setMessages((current) => [...current, data]);
     return data;
   };
 
@@ -102,19 +184,29 @@ export function useSocial(autoLoad = true) {
   useEffect(() => {
     if (autoLoad) {
       void fetchSocial();
+      connect();
     }
+
+    return () => disconnect();
   }, [autoLoad]);
 
   return {
     discoverUsers,
+    friends,
     requests,
     feed,
+    messages,
     loading,
     error,
+    socket: socketRef.current,
+    connect,
+    disconnect,
     fetchSocial,
+    fetchMessages,
     sendRequest,
     acceptRequest,
     createPost,
+    sendMessage,
     togglePostLike,
   };
 }

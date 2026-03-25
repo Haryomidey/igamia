@@ -19,8 +19,8 @@ const NAV_ITEMS = [
   { icon: History, label: 'History', path: '/history' },
   { icon: Wallet, label: 'Wallet', path: '/wallet' },
   { icon: MoreHorizontal, label: 'More', path: '/more' },
-  { icon: Pickaxe, label: 'Coin Mining', path: '/mining' },
-  { icon: PlayCircle, label: 'Watch & Earn', path: '/watch-earn' },
+  { icon: Pickaxe, label: 'Daily Rewards', path: '/mining' },
+  { icon: PlayCircle, label: 'Watch Streams', path: '/watch-earn' },
   { icon: Share2, label: 'Refer & Earn', path: '/refer' },
   { icon: Users, label: 'Community', path: '/social' },
 ];

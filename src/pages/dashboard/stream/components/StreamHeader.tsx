@@ -41,6 +41,7 @@ export function StreamHeader({
   isCoStreamerView,
   isInvitedPending,
   isPledgeStream,
+  canRemoveParticipants,
   removableParticipants,
   connectionStatus,
   isMicMuted,
@@ -68,6 +69,7 @@ export function StreamHeader({
   isCoStreamerView: boolean;
   isInvitedPending: boolean;
   isPledgeStream: boolean;
+  canRemoveParticipants: boolean;
   removableParticipants: Stream['participants'];
   connectionStatus: ConnectionStatus;
   isMicMuted: boolean;
@@ -142,7 +144,7 @@ export function StreamHeader({
           >
             {truncateText(stream?.title ?? 'Live stream', 72)}
           </p>
-          {isHostView && removableParticipants.length > 0 && (
+          {canRemoveParticipants && removableParticipants.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-2 sm:mt-4">
               {removableParticipants.map((participant) => (
                 <div

@@ -74,3 +74,6 @@ export const streamSocketUrl =
 
 export const pledgeSocketUrl =
   import.meta.env.VITE_PLEDGE_SOCKET_URL ?? 'http://localhost:4000/pledges';
+
+export const socialSocketUrl =
+  import.meta.env.VITE_SOCIAL_SOCKET_URL ?? 'http://localhost:4000/social';

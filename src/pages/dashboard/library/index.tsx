@@ -85,6 +85,27 @@ export default function GameLibrary() {
     }
   }, [gamesError, pledgesError, toast]);
 
+  useEffect(() => {
+    const isModalOpen = Boolean(selectedMatch || selectedGameForCreate);
+    const dashboardScroller = document.querySelector<HTMLElement>('[data-dashboard-scroll]');
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousScrollerOverflow = dashboardScroller?.style.overflow;
+
+    if (isModalOpen) {
+      document.body.style.overflow = 'hidden';
+      if (dashboardScroller) {
+        dashboardScroller.style.overflow = 'hidden';
+      }
+    }
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      if (dashboardScroller && previousScrollerOverflow !== undefined) {
+        dashboardScroller.style.overflow = previousScrollerOverflow;
+      }
+    };
+  }, [selectedGameForCreate, selectedMatch]);
+
   const clearMatchQuery = () => {
     if (searchParams.get('matchId')) {
       const nextParams = new URLSearchParams(searchParams);
@@ -383,12 +404,12 @@ export default function GameLibrary() {
 
       <AnimatePresence>
         {(selectedMatch || selectedGameForCreate) && (
-          <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#0f0b21]/90 p-4 backdrop-blur-md sm:p-6">
+          <div className="fixed inset-0 z-[100] overflow-hidden bg-[#0f0b21]/90 p-4 backdrop-blur-md sm:p-6">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative my-6 ml-auto mr-auto w-full max-w-md max-h-[calc(100vh-2rem)] overflow-y-auto rounded-[3rem] border border-white/10 bg-[#1a1635] p-6 shadow-2xl sm:my-10 sm:max-h-[calc(100vh-3rem)] sm:p-10"
+              className="relative mx-auto my-0 flex h-full w-full max-w-md flex-col overflow-y-auto rounded-[3rem] border border-white/10 bg-[#1a1635] p-6 shadow-2xl sm:max-h-[calc(100vh-3rem)] sm:h-auto sm:my-6 sm:p-10"
             >
               <button onClick={closePledgeModal} className="absolute right-6 top-6 text-zinc-500 transition-colors hover:text-white sm:right-8 sm:top-8">
                 <X size={24} />
