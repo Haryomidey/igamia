@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Trophy, Play, Users, Circle, MoreVertical, ChevronRight, Video } from 'lucide-react';
+import { ArrowLeft, Trophy, Play, Users, Circle, MoreVertical, ChevronRight, Video, CalendarClock } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { CommunityVideoPlayer } from '../../../components/CommunityVideoPlayer';
 import { useGames } from '../../../hooks/useGames';
 import { useStream } from '../../../hooks/useStream';
 
@@ -16,6 +17,18 @@ export default function History() {
   }, []);
 
   const featuredGame = featuredGames[0];
+  const formatRecordingDuration = (seconds?: number) => {
+    const total = Math.max(0, seconds ?? 0);
+    const hrs = Math.floor(total / 3600);
+    const mins = Math.floor((total % 3600) / 60);
+    const secs = total % 60;
+
+    if (hrs > 0) {
+      return [hrs, mins, secs].map((value) => String(value).padStart(2, '0')).join(':');
+    }
+
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   return (
     <div className="space-y-10 pb-20">
@@ -69,37 +82,55 @@ export default function History() {
         </div>
       </div>
 
-      <section className="space-y-8">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-black text-white uppercase tracking-[0.3em] italic">Recorded Streams</h2>
+      <section className="space-y-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.32em] text-brand-accent">History Vault</p>
+            <h2 className="mt-2 text-lg font-black uppercase italic tracking-[0.12em] text-white sm:text-xl">Recorded Streams</h2>
+          </div>
+          <p className="max-w-md text-xs leading-relaxed text-zinc-500 sm:text-sm">
+            Rewatch saved broadcasts with cleaner playback controls and compact recording details.
+          </p>
         </div>
         {recordings.length ? (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {recordings.map((recording) => (
-              <div key={recording._id} className="group overflow-hidden rounded-[2.5rem] border border-white/10 bg-white/5">
+              <article key={recording._id} className="group overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))] shadow-xl shadow-black/20">
                 <div className="relative aspect-video overflow-hidden">
-                  <video
+                  <CommunityVideoPlayer
                     src={recording.recordingUrl}
-                    controls
-                    preload="metadata"
-                    className="h-full w-full object-cover"
+                    className="h-full w-full rounded-none bg-black"
                   />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent" />
-                  <div className="pointer-events-none absolute left-4 top-4 flex items-center gap-2 rounded-full bg-black/50 px-3 py-1.5 backdrop-blur-md">
+                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0f0b21]/90 via-transparent to-transparent" />
+                  <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full border border-white/10 bg-black/55 px-3 py-1.5 backdrop-blur-md sm:left-4 sm:top-4">
                     <Video size={12} className="text-brand-primary" />
                     <span className="text-[8px] font-black uppercase tracking-widest text-white">Recorded</span>
                   </div>
+                  <div className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[8px] font-black uppercase tracking-[0.2em] text-zinc-100 backdrop-blur-md sm:bottom-4 sm:right-4">
+                    {formatRecordingDuration(recording.recordingDurationSeconds)}
+                  </div>
                 </div>
-                <div className="space-y-3 p-5">
-                  <h3 className="text-sm font-black uppercase italic text-white">{recording.title}</h3>
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
-                    {recording.recordedAt ? new Date(recording.recordedAt).toLocaleString() : 'Saved stream'}
-                  </p>
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">
-                    Duration: {recording.recordingDurationSeconds ?? 0}s
-                  </p>
+                <div className="space-y-4 p-4 sm:p-5">
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-black uppercase italic leading-snug text-white sm:text-base">
+                      {recording.title}
+                    </h3>
+                    <p className="text-xs leading-relaxed text-zinc-400">
+                      Replay a saved live session with the original stream audio and timeline controls.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-300">
+                      <CalendarClock size={12} className="text-brand-primary" />
+                      {recording.recordedAt ? new Date(recording.recordedAt).toLocaleDateString() : 'Saved stream'}
+                    </div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-300">
+                      <Play size={12} className="text-brand-accent fill-current" />
+                      {formatRecordingDuration(recording.recordingDurationSeconds)}
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </article>
             ))}
           </div>
         ) : (

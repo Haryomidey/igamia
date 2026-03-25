@@ -39,10 +39,18 @@ export default function Home() {
 
   const normalizedActiveStreamIndex =
     activeStreams.length > 0 ? Math.min(activeStreamIndex, activeStreams.length - 1) : 0;
-  const topStream = activeStreams[normalizedActiveStreamIndex];
+  const activeParticipationStream = user?._id
+    ? activeStreams.find((stream) =>
+        stream.participants.some((participant) => participant.userId === user._id),
+      ) ?? null
+    : null;
+  const resolvedActiveStreamIndex = activeParticipationStream
+    ? activeStreams.findIndex((stream) => stream._id === activeParticipationStream._id)
+    : normalizedActiveStreamIndex;
+  const topStream = activeStreams[resolvedActiveStreamIndex];
   const secondaryStream =
-    activeStreams.length > 1
-      ? activeStreams[(normalizedActiveStreamIndex + 1) % activeStreams.length]
+    activeStreams.length > 1 && !activeParticipationStream
+      ? activeStreams[(resolvedActiveStreamIndex + 1) % activeStreams.length]
       : null;
 
   const displayedGames = useMemo(() => featuredGames.slice(0, 4), [featuredGames]);
@@ -52,7 +60,7 @@ export default function Home() {
     await Promise.all([fetchActiveStreams(), fetchMatches(), fetchGames(), fetchFeaturedGames()]);
   };
 
-  const canBrowseStreams = activeStreams.length > 1;
+  const canBrowseStreams = activeStreams.length > 1 && !activeParticipationStream;
 
   const showPreviousStream = () => {
     if (!canBrowseStreams) {
@@ -128,7 +136,7 @@ export default function Home() {
             {topStream && (
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-300">
                 {activeStreams.length > 1
-                  ? `${normalizedActiveStreamIndex + 1} of ${activeStreams.length}`
+                  ? `${resolvedActiveStreamIndex + 1} of ${activeStreams.length}`
                   : '1 live'}
               </span>
             )}

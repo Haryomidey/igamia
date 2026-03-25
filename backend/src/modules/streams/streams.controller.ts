@@ -55,8 +55,14 @@ export class StreamsController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':streamId/stop')
-  stopStream(@Param('streamId') streamId: string, @CurrentUser() user: { sub: string }) {
-    return this.streamsService.stopStream(streamId, user.sub);
+  async stopStream(@Param('streamId') streamId: string, @CurrentUser() user: { sub: string }) {
+    const stream = await this.streamsService.stopStream(streamId, user.sub);
+    this.streamsGateway.emitStreamStopped(streamId, {
+      _id: stream._id.toString(),
+      status: stream.status,
+      endedAt: stream.endedAt,
+    });
+    return stream;
   }
 
   @UseGuards(JwtAuthGuard)

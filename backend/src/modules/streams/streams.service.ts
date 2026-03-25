@@ -52,6 +52,17 @@ export class StreamsService {
     return stream;
   }
 
+  private async ensureNoOtherActiveParticipation(targetStreamId: string, userId: string) {
+    const activeStream = await this.streamModel.findOne({
+      status: 'live',
+      'participants.userId': this.objectId(userId),
+    });
+
+    if (activeStream && activeStream.id !== targetStreamId) {
+      throw new ForbiddenException('End or leave your current live stream before viewing another stream');
+    }
+  }
+
   private ensureHost(stream: StreamDocument, userId: string) {
     if (stream.hostUserId.toString() !== userId) {
       throw new ForbiddenException('Only the host can perform this action');
@@ -112,6 +123,7 @@ export class StreamsService {
     const stream = await this.requireStream(streamId);
     this.ensureNotBlocked(stream, userId);
     this.ensureNotRemoved(stream, userId);
+    await this.ensureNoOtherActiveParticipation(streamId, userId);
 
     const livekitHost = this.configService.get<string>('LIVEKIT_HOST');
     const apiKey = this.configService.get<string>('LIVEKIT_API_KEY');

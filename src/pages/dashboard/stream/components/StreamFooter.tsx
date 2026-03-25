@@ -46,11 +46,11 @@ export function StreamFooter({
   ];
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black via-black/55 to-transparent px-4 pb-4 pt-24 sm:px-6 lg:px-8">
-      <div className="flex h-full flex-col justify-end gap-4">
+    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black via-black/60 to-transparent px-3 pb-3 pt-24 sm:px-5 sm:pb-5 lg:px-8">
+      <div className="flex h-full flex-col justify-end gap-3 sm:gap-4">
         {isInvitedPending && (
           <div
-            className="pointer-events-auto flex flex-col gap-4 rounded-4xl border border-brand-primary/25 bg-black/55 p-4 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between"
+            className="pointer-events-auto flex flex-col gap-4 rounded-[1.75rem] border border-brand-primary/25 bg-black/55 p-4 shadow-xl backdrop-blur-md sm:flex-row sm:items-center sm:justify-between"
             onClick={(event) => event.stopPropagation()}
           >
             <div>
@@ -81,7 +81,7 @@ export function StreamFooter({
           </div>
         )}
 
-        <div className="pointer-events-auto">
+        <div className="pointer-events-auto w-full max-w-[min(92vw,26rem)] sm:max-w-sm">
           <StreamCommentStack comments={commentEntries} />
         </div>
 
@@ -90,10 +90,10 @@ export function StreamFooter({
             event.stopPropagation();
             onSubmitMessage(event);
           }}
-          className="pointer-events-auto flex items-center gap-3"
+          className="pointer-events-auto flex items-center gap-2 rounded-[1.5rem] border border-white/10 bg-black/35 p-2 backdrop-blur-xl sm:gap-3"
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="flex-1 rounded-full border border-white/10 bg-white/10 backdrop-blur-md">
+          <div className="flex-1 rounded-[1.1rem] border border-white/10 bg-white/10 backdrop-blur-md">
             <input
               type="text"
               value={message}
@@ -105,7 +105,7 @@ export function StreamFooter({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-primary text-white disabled:opacity-50"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[1rem] bg-brand-primary text-white transition-colors hover:bg-brand-accent hover:text-black disabled:opacity-50 sm:h-12 sm:w-12"
           >
             <Send size={16} />
           </button>

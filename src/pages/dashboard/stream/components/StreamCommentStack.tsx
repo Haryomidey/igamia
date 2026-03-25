@@ -37,7 +37,7 @@ function renderTaggedMessage(message: string) {
 export function StreamCommentStack({ comments }: { comments: StreamCommentEntry[] }) {
   return (
     <div
-      className="max-h-44 max-w-[80%] space-y-1.5 overflow-y-auto pr-1 sm:max-h-56 sm:max-w-sm"
+      className="max-h-40 w-full space-y-1.5 overflow-y-auto pr-1 sm:max-h-52"
       style={{ scrollbarGutter: 'stable' }}
     >
       {comments.map((comment, index) => (
@@ -45,7 +45,7 @@ export function StreamCommentStack({ comments }: { comments: StreamCommentEntry[
           key={comment.id}
           initial={index > comments.length - 4 ? { opacity: 0, y: 12 } : false}
           animate={{ opacity: 1, y: 0 }}
-          className={`rounded-2xl border px-3 py-2 text-xs backdrop-blur-md ${
+          className={`rounded-[1.15rem] border px-3 py-2 text-xs shadow-lg backdrop-blur-md ${
             comment.type === 'description'
               ? 'border-brand-accent/20 bg-brand-accent/10'
               : 'border-white/10 bg-black/35'

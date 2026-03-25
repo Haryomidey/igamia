@@ -35,6 +35,11 @@ type ActivityOverlay = {
   accent: 'gift' | 'join';
 };
 
+type StreamEndedOverlay = {
+  hostUsername: string;
+  countdownSeconds: number;
+};
+
 function participantLabel(participant: Participant) {
   return participant.name || participant.identity || 'Streamer';
 }
@@ -74,7 +79,6 @@ function getStreamConnectionErrorMessage(error: unknown) {
 function wait(durationMs: number) {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
-
 
 export default function LiveStream() {
   const navigate = useNavigate();
@@ -137,6 +141,7 @@ export default function LiveStream() {
   const [roomReconnectKey, setRoomReconnectKey] = useState(0);
   const [mediaStates, setMediaStates] = useState<Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>>({});
   const [pledgeMatch, setPledgeMatch] = useState<MatchActivity | null>(null);
+  const [streamEndedOverlay, setStreamEndedOverlay] = useState<StreamEndedOverlay | null>(null);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraPaused, setIsCameraPaused] = useState(false);
   const [startForm, setStartForm] = useState({
@@ -200,6 +205,7 @@ export default function LiveStream() {
     () => videoTiles.find((tile) => tile.participantUserId === user?._id) ?? videoTiles[0] ?? null,
     [user?._id, videoTiles],
   );
+  const isStreamEndedForViewer = Boolean(streamEndedOverlay && !isHostView);
   useEffect(() => {
     if (!resolvedStreamId) {
       return;
@@ -351,13 +357,57 @@ export default function LiveStream() {
     setAudioTracks([]);
     setActivityOverlays([]);
     setLikeTicker(null);
-    toast.info('Live stream has been ended.', { title: 'Live Ended' });
     if (recentStreamStopped.redirectToDispute && isParticipantView && stream?.matchId) {
       navigate(`/disputes/${stream.matchId}`);
       return;
     }
-    navigate('/home');
-  }, [isParticipantView, navigate, recentStreamStopped, resolvedStreamId, stream?.matchId, toast]);
+
+    if (isHostView) {
+      return;
+    }
+
+    setStreamEndedOverlay({
+      hostUsername: host?.username ?? 'The streamer',
+      countdownSeconds: 5,
+    });
+  }, [host?.username, isHostView, isParticipantView, navigate, recentStreamStopped, resolvedStreamId, stream?.matchId]);
+
+  useEffect(() => {
+    if (!streamEndedOverlay || isHostView) {
+      return;
+    }
+
+    if (streamEndedOverlay.countdownSeconds <= 0) {
+      const redirectAfterEnd = async () => {
+        const nextStreams = await fetchActiveStreams();
+        const nextStream = nextStreams.find((entry) => entry._id !== resolvedStreamId);
+        if (nextStream) {
+          navigate(`/stream?streamId=${nextStream._id}`, { replace: true });
+          return;
+        }
+
+        if (window.history.length > 1) {
+          navigate(-1);
+          return;
+        }
+
+        navigate('/home', { replace: true });
+      };
+
+      void redirectAfterEnd();
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setStreamEndedOverlay((current) =>
+        current
+          ? { ...current, countdownSeconds: Math.max(0, current.countdownSeconds - 1) }
+          : current,
+      );
+    }, 1000);
+
+    return () => window.clearTimeout(timeout);
+  }, [fetchActiveStreams, isHostView, navigate, resolvedStreamId, streamEndedOverlay]);
 
   useEffect(() => {
     if (!resolvedStreamId || !user?._id || !user.username) {
@@ -600,7 +650,7 @@ export default function LiveStream() {
   };
 
   const handleLike = async () => {
-    if (!resolvedStreamId || isParticipantView) {
+    if (!resolvedStreamId || isParticipantView || isStreamEndedForViewer) {
       return;
     }
 
@@ -614,7 +664,7 @@ export default function LiveStream() {
 
   const handleSendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!resolvedStreamId || !message.trim()) {
+    if (!resolvedStreamId || !message.trim() || isStreamEndedForViewer) {
       return;
     }
 
@@ -631,7 +681,7 @@ export default function LiveStream() {
 
   const handleGift = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!resolvedStreamId) {
+    if (!resolvedStreamId || isStreamEndedForViewer) {
       return;
     }
 
@@ -651,7 +701,7 @@ export default function LiveStream() {
   };
 
   const handleShare = async () => {
-    if (!resolvedStreamId) {
+    if (!resolvedStreamId || isStreamEndedForViewer) {
       return;
     }
 
@@ -927,7 +977,7 @@ export default function LiveStream() {
         await stopRecording();
       }
       await stopStream(resolvedStreamId);
-      toast.success('Live stream ended.');
+      toast.success('Your stream has ended.', { title: 'Stream Ended' });
       navigate('/history');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to stop stream.');
@@ -1036,7 +1086,7 @@ export default function LiveStream() {
   }
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-black text-white">
+    <div className="fixed inset-0 overflow-hidden bg-[radial-gradient(circle_at_top,rgba(223,165,58,0.1),transparent_24%),linear-gradient(180deg,#020202,#09070f_48%,#05050a)] text-white">
       <div ref={audioContainerRef} className="hidden" aria-hidden="true" />
 
       <div className="relative h-full w-full touch-manipulation" onClick={() => void handleLike()}>
@@ -1054,7 +1104,7 @@ export default function LiveStream() {
         />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(223,165,58,0.12),transparent_30%)]" />
         {canBrowseStreams && (
-          <div className="pointer-events-none absolute inset-y-0 left-4 z-20 flex items-center sm:left-6 lg:left-8">
+          <div className="pointer-events-none absolute inset-y-0 left-3 z-20 flex items-center sm:left-6 lg:left-8">
             <div className="pointer-events-auto flex flex-col gap-2">
               <button
                 type="button"
@@ -1084,17 +1134,17 @@ export default function LiveStream() {
           </div>
         )}
         {!videoTiles.length && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-36 z-10 px-5 sm:bottom-40 sm:px-6 lg:px-8">
+          <div className="pointer-events-none absolute inset-x-0 bottom-32 z-10 px-4 sm:bottom-40 sm:px-6 lg:px-8">
             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-primary">
               {connectionStatus === 'connecting' ? 'Connecting to room' : 'Waiting for live video'}
             </p>
             <h2
               title={stream?.title ?? 'Live Session'}
-              className="mt-3 max-w-xl truncate text-xl font-black uppercase italic text-white sm:text-4xl"
+              className="mt-3 max-w-2xl text-xl font-black uppercase italic text-white sm:text-4xl"
             >
               {truncateText(stream?.title ?? 'Live Session', 68)}
             </h2>
-            <p className="mt-2 max-w-xl text-xs text-zinc-300 sm:text-base">
+            <p className="mt-2 max-w-xl text-xs leading-relaxed text-zinc-300 sm:text-base">
               {connectionStatus === 'error'
                 ? 'The live room could not be reached. Check your LiveKit configuration and reconnect.'
                 : isHostView
@@ -1147,7 +1197,8 @@ export default function LiveStream() {
           }}
         />
 
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-24 flex-col items-end justify-end gap-3 px-4 pb-32 sm:w-28 sm:px-6 sm:pb-36">
+        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-20 px-3 sm:inset-y-0 sm:right-0 sm:left-auto sm:flex sm:w-28 sm:flex-col sm:items-end sm:justify-end sm:gap-3 sm:px-6 sm:pb-36">
+          <div className="pointer-events-auto ml-auto flex max-w-max items-center gap-2 rounded-full border border-white/10 bg-black/35 px-2 py-2 shadow-xl backdrop-blur-xl sm:ml-0 sm:flex-col sm:rounded-4xl sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
           <AnimatePresence>
             {floatingHearts.map((heart) => (
               <motion.div key={heart.id} initial={{ opacity: 0, y: 0, scale: 0.7 }} animate={{ opacity: 1, y: -160, scale: 1.1 }} exit={{ opacity: 0 }} transition={{ duration: 1.35, ease: 'easeOut' }} className="absolute bottom-24 text-brand-primary" style={{ right: `${100 - heart.left}%`, rotate: `${heart.rotate}deg` }}>
@@ -1183,7 +1234,7 @@ export default function LiveStream() {
           </AnimatePresence>
 
           {!isParticipantView && (
-            <button onClick={(event) => { event.stopPropagation(); setIsGifting(true); }} className="pointer-events-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white backdrop-blur-md">
+            <button onClick={(event) => { event.stopPropagation(); setIsGifting(true); }} className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors backdrop-blur-md hover:bg-white/15 sm:h-14 sm:w-14">
               <Gift size={20} className="text-brand-accent" />
             </button>
           )}
@@ -1193,6 +1244,7 @@ export default function LiveStream() {
               <Heart size={14} fill="currentColor" />
               <span>{stream?.likesCount ?? 0}</span>
             </div>
+          </div>
           </div>
         </div>
 
@@ -1288,11 +1340,11 @@ export default function LiveStream() {
 
         <StreamFooter
           isInvitedPending={isInvitedPending}
-          isSubmitting={isSubmitting}
+          isSubmitting={isSubmitting || isStreamEndedForViewer}
           hostUsername={host?.username}
           streamDescription={stream?.description}
           comments={comments}
-          message={message}
+          message={isStreamEndedForViewer ? '' : message}
           onMessageChange={setMessage}
           onSubmitMessage={(event) => {
             void handleSendMessage(event);
@@ -1300,13 +1352,29 @@ export default function LiveStream() {
           onAcceptInvite={() => void handleAcceptInvite()}
           onDeclineInvite={() => void handleLeaveLive()}
         />
+
+        {streamEndedOverlay && !isHostView && (
+          <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/82 px-6 text-center backdrop-blur-md">
+            <div className="w-full max-w-xl rounded-[2.5rem] border border-white/10 bg-[#0f0b21]/90 px-8 py-10 shadow-2xl">
+              <p className="text-[10px] font-black uppercase tracking-[0.34em] text-brand-accent">
+                Live Ended
+              </p>
+              <h2 className="mt-4 text-3xl font-black uppercase italic text-white sm:text-4xl">
+                {streamEndedOverlay.hostUsername} has ended the live
+              </h2>
+              <p className="mt-4 text-sm leading-relaxed text-zinc-300 sm:text-base">
+                Redirecting in {streamEndedOverlay.countdownSeconds} second{streamEndedOverlay.countdownSeconds === 1 ? '' : 's'}.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <GiftModal
-        open={isGifting}
+        open={isGifting && !isStreamEndedForViewer}
         host={host}
         giftAmount={giftAmount}
-        isSubmitting={isSubmitting}
+        isSubmitting={isSubmitting || isStreamEndedForViewer}
         onClose={() => setIsGifting(false)}
         onGiftAmountChange={setGiftAmount}
         onSubmit={handleGift}
