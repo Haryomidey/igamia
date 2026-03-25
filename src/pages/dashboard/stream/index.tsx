@@ -113,7 +113,7 @@ export default function LiveStream() {
     disconnect,
   } = useStream();
   const { discoverUsers, sendRequest, fetchSocial } = useSocial(true);
-  const { fetchMatch, submitResultClaim } = usePledges(false);
+  const { fetchMatch, submitResultClaim, respondToResultClaim } = usePledges(false);
   const toast = useToast();
 
   const [message, setMessage] = useState('');
@@ -163,15 +163,24 @@ export default function LiveStream() {
   const activeStreamIndex = resolvedStreamId
     ? activeStreams.findIndex((activeStream) => activeStream._id === resolvedStreamId)
     : -1;
-  const canBrowseStreams = activeStreams.length > 1 && activeStreamIndex >= 0;
   const host = stream?.participants.find((participant) => participant.role === 'host') ?? stream?.participants[0];
   const currentParticipant = stream?.participants.find((participant) => participant.userId === user?._id);
   const isHostView = Boolean(user?._id && stream?.hostUserId === user._id);
   const isPledgeStream = stream?.mode === 'pledge';
   const isParticipantView = currentParticipant?.role === 'host' || currentParticipant?.role === 'guest';
+  const canBrowseStreams = !isParticipantView && activeStreams.length > 1 && activeStreamIndex >= 0;
   const isInvitedPending = currentParticipant?.role === 'invited';
   const isCoStreamerView = currentParticipant?.role === 'guest' && !isHostView;
   const canRemoveParticipants = isHostView && !isPledgeStream;
+  const pendingClaim = pledgeMatch?.resultClaim?.status === 'pending' ? pledgeMatch.resultClaim : null;
+  const isClaimOwner = Boolean(pendingClaim?.claimedByUserId && pendingClaim.claimedByUserId === user?._id);
+  const canRespondToClaim = Boolean(
+    pendingClaim &&
+      pendingClaim.claimedByUserId &&
+      user?._id &&
+      pendingClaim.claimedByUserId !== user._id &&
+      isParticipantView,
+  );
   const pendingInvites = useMemo(
     () => (stream?.participants ?? []).filter((participant) => participant.role === 'invited'),
     [stream?.participants],
@@ -995,6 +1004,25 @@ export default function LiveStream() {
     }
   };
 
+  const handlePledgeClaimDecision = async (decision: 'approve' | 'reject') => {
+    if (!stream?.matchId || !pendingClaim) {
+      return;
+    }
+
+    try {
+      await respondToResultClaim(stream.matchId, { decision });
+      const nextMatch = await fetchMatch(stream.matchId);
+      setPledgeMatch(nextMatch);
+      toast.success(
+        decision === 'approve'
+          ? 'Claim approved. Winner credited.'
+          : 'Claim rejected. Opening dispute.',
+      );
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to update pledge result claim.');
+    }
+  };
+
   if (!resolvedStreamId && !loading) {
     return (
       <EmptyStreamState
@@ -1192,10 +1220,36 @@ export default function LiveStream() {
                   </button>
                 </>
               )}
-              {pledgeMatch.resultClaim?.status === 'pending' && pledgeMatch.resultClaim.claimedByUserId === user?._id && (
+              {pendingClaim && isClaimOwner && (
                 <span className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-300 sm:text-[9px]">
-                  Waiting for other streamer
+                  Waiting for response
                 </span>
+              )}
+              {pendingClaim && (
+                <span className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-200 sm:text-[9px]">
+                  {pendingClaim.claimedByUsername} claimed {pendingClaim.outcome}
+                </span>
+              )}
+              {pendingClaim?.note && (
+                <span className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-300 sm:text-[9px]">
+                  {pendingClaim.note}
+                </span>
+              )}
+              {canRespondToClaim && (
+                <>
+                  <button
+                    onClick={() => void handlePledgeClaimDecision('reject')}
+                    className="rounded-full bg-rose-500/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-rose-200 sm:text-[9px]"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    onClick={() => void handlePledgeClaimDecision('approve')}
+                    className="rounded-full bg-emerald-500/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-emerald-300 sm:text-[9px]"
+                  >
+                    Accept
+                  </button>
+                </>
               )}
               <button
                 onClick={() =>

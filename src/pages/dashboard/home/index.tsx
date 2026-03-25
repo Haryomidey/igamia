@@ -124,21 +124,32 @@ export default function Home() {
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-black uppercase tracking-widest text-white italic">Ongoing Streams</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={showPreviousStream}
-              disabled={!canBrowseStreams}
-              className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors disabled:opacity-40"
-            >
-              <ChevronLeft size={20} />
-            </button>
-            <button
-              onClick={showNextStream}
-              disabled={!canBrowseStreams}
-              className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors disabled:opacity-40"
-            >
-              <ChevronRight size={20} />
-            </button>
+          <div className="flex items-center gap-3">
+            {topStream && (
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-300">
+                {activeStreams.length > 1
+                  ? `${normalizedActiveStreamIndex + 1} of ${activeStreams.length}`
+                  : '1 live'}
+              </span>
+            )}
+            {canBrowseStreams && (
+              <div className="flex gap-2">
+                <button
+                  onClick={showPreviousStream}
+                  aria-label="Show previous ongoing stream"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 transition-colors hover:bg-white/10"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <button
+                  onClick={showNextStream}
+                  aria-label="Show next ongoing stream"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 transition-colors hover:bg-white/10"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -181,14 +192,38 @@ export default function Home() {
               </div>
 
               <div className="absolute inset-0 flex items-center justify-center">
-                <Link to={`/stream?streamId=${topStream._id}`} className="w-20 h-20 bg-brand-primary text-white rounded-full flex items-center justify-center shadow-2xl shadow-brand-primary/40 hover:scale-110 transition-transform group-hover:bg-brand-accent group-hover:text-black">
-                  <Play size={32} className="fill-current ml-1" />
-                </Link>
+                <div className="flex flex-col items-center gap-4">
+                  <Link
+                    to={`/stream?streamId=${topStream._id}`}
+                    className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-primary text-white shadow-2xl shadow-brand-primary/40 transition-transform hover:scale-110 group-hover:bg-brand-accent group-hover:text-black"
+                  >
+                    <Play size={32} className="fill-current ml-1" />
+                  </Link>
+                  <div className="flex flex-wrap items-center justify-center gap-3 px-4">
+                    <Link
+                      to={`/stream?streamId=${topStream._id}`}
+                      className="rounded-full border border-white/15 bg-black/35 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-white backdrop-blur-md transition-colors hover:bg-white/15"
+                    >
+                      Watch This Stream
+                    </Link>
+                    {canBrowseStreams && (
+                      <button
+                        onClick={showNextStream}
+                        className="rounded-full border border-white/15 bg-black/35 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-white backdrop-blur-md transition-colors hover:bg-white/15"
+                      >
+                        Next Live
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
             {secondaryStream && (
-              <div className="lg:col-span-3 hidden lg:block relative rounded-[2.5rem] overflow-hidden border border-white/10">
+              <Link
+                to={`/stream?streamId=${secondaryStream._id}`}
+                className="lg:col-span-3 hidden lg:block relative rounded-[2.5rem] overflow-hidden border border-white/10 transition-transform hover:-translate-y-1"
+              >
                 <img
                   src={secondaryStream.participants[0]?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${secondaryStream.participants[0]?.username ?? secondaryStream.title}`}
                   alt={secondaryStream.title}
@@ -202,10 +237,13 @@ export default function Home() {
                     <div className="w-8 h-8 rounded-full border border-white/20 overflow-hidden">
                       <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${secondaryStream.participants[0]?.username ?? secondaryStream.title}`} alt="Streamer" />
                     </div>
-                    <p className="text-[10px] font-bold text-zinc-400">{secondaryStream.participants[0]?.username ?? 'Live Host'}</p>
+                    <div>
+                      <p className="text-[10px] font-bold text-zinc-400">{secondaryStream.participants[0]?.username ?? 'Live Host'}</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.18em] text-white/80">Open This Live</p>
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Link>
             )}
           </div>
         )}
@@ -243,7 +281,7 @@ export default function Home() {
                 <h3 className="font-black text-white text-sm uppercase leading-tight">{activity.title}</h3>
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                    <Calendar size={12} className="text-brand-primary" /> {new Date(activity.scheduledFor).toLocaleDateString()}
+                    <Calendar size={12} className="text-brand-primary" /> Until {new Date(activity.scheduledFor).toLocaleDateString()}
                   </div>
                   <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
                     <TrendingUp size={12} className="text-brand-primary" /> {activity.mode}

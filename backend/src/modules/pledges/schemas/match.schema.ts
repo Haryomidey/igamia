@@ -57,6 +57,21 @@ class MatchResultClaim {
 }
 
 @Schema({ _id: false })
+class DisputeAttachment {
+  @Prop({ required: true })
+  url!: string;
+
+  @Prop({ required: true, enum: ['image', 'video'] })
+  kind!: 'image' | 'video';
+
+  @Prop()
+  mimeType?: string;
+
+  @Prop()
+  fileName?: string;
+}
+
+@Schema({ _id: false })
 class DisputeMessage {
   @Prop({ type: Types.ObjectId, ref: User.name })
   senderUserId?: Types.ObjectId;
@@ -69,6 +84,9 @@ class DisputeMessage {
 
   @Prop({ required: true })
   message!: string;
+
+  @Prop({ type: [DisputeAttachment], default: [] })
+  attachments!: DisputeAttachment[];
 
   @Prop({ default: Date.now })
   createdAt!: Date;

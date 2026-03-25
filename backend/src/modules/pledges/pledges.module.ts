@@ -11,6 +11,7 @@ import { GamesModule } from '../games/games.module';
 import { WalletModule } from '../wallet/wallet.module';
 import { WsJwtGuard } from '../../common/guards/ws-jwt.guard';
 import { StreamsModule } from '../streams/streams.module';
+import { MediaModule } from '../media/media.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { StreamsModule } from '../streams/streams.module';
     GamesModule,
     WalletModule,
     StreamsModule,
+    MediaModule,
   ],
   controllers: [PledgesController],
   providers: [PledgesService, PledgesGateway, WsJwtGuard],

@@ -20,6 +20,7 @@ import { StreamsGateway } from '../streams/streams.gateway';
 import { SubmitResultClaimDto } from './dto/submit-result-claim.dto';
 import { RespondResultClaimDto } from './dto/respond-result-claim.dto';
 import { SendDisputeMessageDto } from './dto/send-dispute-message.dto';
+import { MediaService } from '../media/media.service';
 
 @Injectable()
 export class PledgesService implements OnModuleInit {
@@ -31,6 +32,7 @@ export class PledgesService implements OnModuleInit {
     private readonly pledgesGateway: PledgesGateway,
     private readonly streamsService: StreamsService,
     private readonly streamsGateway: StreamsGateway,
+    private readonly mediaService: MediaService,
   ) {}
 
   async onModuleInit() {
@@ -105,6 +107,55 @@ export class PledgesService implements OnModuleInit {
     });
 
     return stoppedStream;
+  }
+
+  private isOpenMatchExpired(match: MatchDocument | { status: string; scheduledFor?: Date; participants?: unknown[] }) {
+    if (match.status !== 'open' || !match.scheduledFor) {
+      return false;
+    }
+
+    return new Date(match.scheduledFor).getTime() <= Date.now();
+  }
+
+  private async purgeExpiredOpenMatches() {
+    await this.matchModel.deleteMany({
+      status: 'open',
+      scheduledFor: { $lte: new Date() },
+    });
+  }
+
+  private async ensureOpenMatchStillAvailable(match: MatchDocument) {
+    if (!this.isOpenMatchExpired(match)) {
+      return;
+    }
+
+    await this.matchModel.deleteOne({ _id: match._id });
+    throw new BadRequestException('This pledge has expired and is no longer available');
+  }
+
+  private async uploadDisputeAttachments(
+    matchId: string,
+    userId: string,
+    attachments: NonNullable<SendDisputeMessageDto['attachments']>,
+  ) {
+    return Promise.all(
+      attachments.map(async (attachment, index) => {
+        const uploaded = await this.mediaService.uploadBase64({
+          base64Data: attachment.base64Data,
+          mimeType: attachment.mimeType,
+          fileName: attachment.fileName?.trim() || `dispute-${matchId}-${Date.now()}-${index + 1}`,
+          folder: `igamia/users/${userId}/pledge-disputes/${matchId}`,
+          resourceType: attachment.kind === 'video' ? 'video' : 'image',
+        });
+
+        return {
+          url: uploaded.secureUrl,
+          kind: attachment.kind,
+          mimeType: attachment.mimeType,
+          fileName: attachment.fileName?.trim() || `attachment-${index + 1}`,
+        };
+      }),
+    );
   }
 
   private async settleMatch(match: MatchDocument, outcome: 'win' | 'loss' | 'draw', claimantUserId: string) {
@@ -206,11 +257,13 @@ export class PledgesService implements OnModuleInit {
     await match.save();
   }
 
-  listMatches() {
+  async listMatches() {
+    await this.purgeExpiredOpenMatches();
     return this.matchModel.find().sort({ scheduledFor: 1 }).lean();
   }
 
-  getFeaturedActivities() {
+  async getFeaturedActivities() {
+    await this.purgeExpiredOpenMatches();
     return this.matchModel.find({ status: 'open' }).sort({ scheduledFor: 1 }).limit(8).lean();
   }
 
@@ -219,6 +272,8 @@ export class PledgesService implements OnModuleInit {
     if (!game) {
       throw new NotFoundException('Game not found');
     }
+
+    await this.purgeExpiredOpenMatches();
 
     return this.matchModel.create({
       gameId: this.objectId(dto.gameId),
@@ -243,6 +298,7 @@ export class PledgesService implements OnModuleInit {
 
   async joinMatch(matchId: string, userId: string, username: string, dto: RequestJoinMatchDto) {
     const match = await this.requireMatch(matchId);
+    await this.ensureOpenMatchStillAvailable(match);
 
     if (match.hostUserId?.toString() === userId) {
       throw new BadRequestException('You cannot join your own pledge');
@@ -309,6 +365,7 @@ export class PledgesService implements OnModuleInit {
     hostUsername: string,
   ) {
     const match = await this.requireMatch(matchId);
+    await this.ensureOpenMatchStillAvailable(match);
 
     if (match.hostUserId?.toString() !== hostUserId) {
       throw new BadRequestException('Only the pledge host can accept join requests');
@@ -512,12 +569,14 @@ export class PledgesService implements OnModuleInit {
             senderUsername: username,
             senderRole: 'streamer',
             message: dto.note?.trim() || 'I want to dispute this match result.',
+            attachments: [],
             createdAt: new Date(),
           },
           {
             senderUsername: 'iGamia Assistant',
             senderRole: 'assistant',
             message: 'Assistant: Dispute opened. Share your evidence, scoreline, and the ruling you expect.',
+            attachments: [],
             createdAt: new Date(),
           },
         ],
@@ -605,12 +664,14 @@ export class PledgesService implements OnModuleInit {
             senderUsername: username,
             senderRole: 'streamer',
             message: `I rejected ${match.resultClaim.claimedByUsername}'s ${match.resultClaim.outcome} claim.`,
+            attachments: [],
             createdAt: new Date(),
           },
           {
             senderUsername: 'iGamia Assistant',
             senderRole: 'assistant',
             message: 'Assistant: The match is now in dispute. Both streamers can continue the case here.',
+            attachments: [],
             createdAt: new Date(),
           },
         ],
@@ -689,19 +750,31 @@ export class PledgesService implements OnModuleInit {
       throw new BadRequestException('No active dispute found for this match');
     }
 
+    const trimmedMessage = dto.message?.trim() ?? '';
+    const incomingAttachments = dto.attachments ?? [];
+    if (!trimmedMessage && !incomingAttachments.length) {
+      throw new BadRequestException('Add a message or at least one image/video evidence file');
+    }
+
+    const uploadedAttachments = incomingAttachments.length
+      ? await this.uploadDisputeAttachments(matchId, userId, incomingAttachments)
+      : [];
+
     match.dispute.messages.push({
       senderUserId: this.objectId(userId),
       senderUsername: username,
       senderRole: 'streamer',
-      message: dto.message.trim(),
+      message: trimmedMessage || 'Shared evidence for this dispute.',
+      attachments: uploadedAttachments,
       createdAt: new Date(),
     } as any);
 
-    const assistantReply = this.buildAssistantReply(dto.message);
+    const assistantReply = this.buildAssistantReply(trimmedMessage || 'evidence');
     match.dispute.messages.push({
       senderUsername: 'iGamia Assistant',
       senderRole: 'assistant',
       message: assistantReply,
+      attachments: [],
       createdAt: new Date(),
     } as any);
 
@@ -711,7 +784,7 @@ export class PledgesService implements OnModuleInit {
     this.pledgesGateway.emitDisputeUpdated(participantIds, {
       matchId: match.id,
       title: match.title,
-      message: dto.message.trim(),
+      message: trimmedMessage || `${username} shared dispute evidence.`,
       senderUsername: username,
       senderRole: 'streamer',
     });

@@ -61,8 +61,13 @@ export default function Leaderboard() {
                 alt={leader.username}
                 className="h-16 w-16 rounded-2xl border border-white/10 object-cover"
               />
-              <div>
-                <h3 className="text-xl font-black uppercase italic text-white">{leader.username}</h3>
+              <div className="min-w-0 flex-1">
+                <h3
+                  title={leader.username}
+                  className="truncate text-xl font-black uppercase italic text-white"
+                >
+                  {leader.username}
+                </h3>
                 <p className="text-sm font-bold text-brand-primary">{leader.winRate}% win rate</p>
               </div>
             </div>
@@ -97,15 +102,17 @@ export default function Leaderboard() {
         <div className="divide-y divide-white/5">
           {leaderboard.map((leader) => (
             <div key={leader.userId} className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-4">
+              <div className="flex min-w-0 items-center gap-4">
                 <span className="w-8 text-2xl font-black text-zinc-600">{leader.rank}</span>
                 <img
                   src={leader.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${leader.username}`}
                   alt={leader.username}
                   className="h-12 w-12 rounded-full border border-white/10 object-cover"
                 />
-                <div>
-                  <h4 className="font-black text-white">{leader.username}</h4>
+                <div className="min-w-0 flex-1">
+                  <h4 title={leader.username} className="truncate font-black text-white">
+                    {leader.username}
+                  </h4>
                   <div className="mt-1 flex flex-wrap gap-2">
                     {leader.achievements.slice(0, 3).map((achievement) => (
                       <span

@@ -50,6 +50,12 @@ export type MatchActivity = {
       senderUsername: string;
       senderRole: 'streamer' | 'assistant';
       message: string;
+      attachments?: Array<{
+        url: string;
+        kind: 'image' | 'video';
+        mimeType?: string;
+        fileName?: string;
+      }>;
       createdAt: string;
     }>;
   };
@@ -171,8 +177,19 @@ export function usePledges(autoLoad = true) {
     return data;
   };
 
-  const sendDisputeMessage = async (matchId: string, message: string) => {
-    const { data } = await api.post(`/pledges/matches/${matchId}/dispute/messages`, { message });
+  const sendDisputeMessage = async (
+    matchId: string,
+    payload: {
+      message?: string;
+      attachments?: Array<{
+        fileName: string;
+        mimeType: string;
+        kind: 'image' | 'video';
+        base64Data: string;
+      }>;
+    },
+  ) => {
+    const { data } = await api.post(`/pledges/matches/${matchId}/dispute/messages`, payload);
     return data;
   };
 

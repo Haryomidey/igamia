@@ -287,7 +287,7 @@ export default function GameLibrary() {
                 <div className="space-y-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
                   <div className="flex items-center gap-2">
                     <Calendar size={12} className="text-brand-primary" />
-                    {new Date(activity.scheduledFor).toLocaleString()}
+                    Open until {new Date(activity.scheduledFor).toLocaleString()}
                   </div>
                   <div className="flex items-center gap-2">
                     <DollarSign size={12} className="text-brand-accent" />
@@ -475,7 +475,7 @@ export default function GameLibrary() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Start Time</label>
+                      <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Open Until</label>
                       <input
                         type="datetime-local"
                         value={createForm.scheduledFor}
