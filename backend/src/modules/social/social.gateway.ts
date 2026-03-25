@@ -73,6 +73,14 @@ export class SocialGateway implements OnGatewayConnection {
     this.server.emit('social:postCreated', post);
   }
 
+  emitPostLiked(payload: unknown) {
+    this.server.emit('social:postLiked', payload);
+  }
+
+  emitPostCommented(payload: unknown) {
+    this.server.emit('social:postCommented', payload);
+  }
+
   emitRequestReceived(targetUserId: string, payload: unknown) {
     this.server.to(this.userRoom(targetUserId)).emit('social:requestReceived', payload);
   }

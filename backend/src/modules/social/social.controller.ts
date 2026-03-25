@@ -52,11 +52,29 @@ export class SocialController {
   }
 
   @Post('posts/:postId/like')
-  likePost(
+  async likePost(
     @CurrentUser() user: { sub: string },
     @Param('postId') postId: string,
   ) {
-    return this.socialService.togglePostLike(postId, user.sub);
+    const result = await this.socialService.togglePostLike(postId, user.sub);
+    this.socialGateway.emitPostLiked(result);
+    return result;
+  }
+
+  @Get('posts/:postId/comments')
+  postComments(@Param('postId') postId: string) {
+    return this.socialService.listPostComments(postId);
+  }
+
+  @Post('posts/:postId/comments')
+  async commentOnPost(
+    @CurrentUser() user: { sub: string },
+    @Param('postId') postId: string,
+    @Body() body: { message: string },
+  ) {
+    const comment = await this.socialService.commentOnPost(postId, user.sub, body.message);
+    this.socialGateway.emitPostCommented(comment);
+    return comment;
   }
 
   @Post('requests/:targetUserId')
