@@ -14,11 +14,13 @@ export type VideoTile = {
 function LiveVideoSurface({
   track,
   muted,
+  isMirrored,
   participantUserId,
   onVideoElementChange,
 }: {
   track: Track;
   muted: boolean;
+  isMirrored: boolean;
   participantUserId: string;
   onVideoElementChange?: (participantUserId: string, element: HTMLVideoElement | null) => void;
 }) {
@@ -44,7 +46,16 @@ function LiveVideoSurface({
     };
   }, [onVideoElementChange, participantUserId]);
 
-  return <video ref={videoRef} autoPlay playsInline muted={muted} className="h-full w-full object-cover" />;
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted={muted}
+      className="h-full w-full object-cover"
+      style={isMirrored ? { transform: 'scaleX(-1)' } : undefined}
+    />
+  );
 }
 
 function tileLayoutClass(count: number, index: number) {
@@ -97,6 +108,7 @@ export function StreamStageGrid({
         const cameraOff = Boolean(state?.isCameraOff);
         const muted = Boolean(state?.isMuted);
         const showPlaceholder = cameraOff || !tile;
+        const isCurrentUserTile = participant.userId === currentUserId;
 
         return (
           <div
@@ -128,7 +140,13 @@ export function StreamStageGrid({
                     {participant.username}
                   </p>
                   <p className="mt-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-zinc-300 sm:mt-2 sm:text-xs sm:tracking-[0.22em]">
-                    {cameraOff ? `${participant.username} paused video` : `Waiting for ${participant.username}`}
+                    {cameraOff
+                      ? isCurrentUserTile
+                        ? 'You have paused the stream'
+                        : `${participant.username} paused video`
+                      : isCurrentUserTile
+                        ? 'Waiting for your video'
+                        : `Waiting for ${participant.username}`}
                   </p>
                 </div>
               </div>
@@ -136,6 +154,7 @@ export function StreamStageGrid({
               <LiveVideoSurface
                 track={tile.track}
                 muted={tile.isLocal}
+                isMirrored={tile.isLocal}
                 participantUserId={participant.userId}
                 onVideoElementChange={onVideoElementChange}
               />

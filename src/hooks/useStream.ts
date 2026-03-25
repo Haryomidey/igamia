@@ -55,6 +55,7 @@ export type StreamLikeEvent = {
 export type StreamPresenceEvent = {
   streamId: string;
   viewersCount: number;
+  joinedUserId?: string;
   joinedUsername?: string;
 };
 

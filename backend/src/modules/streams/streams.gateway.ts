@@ -63,11 +63,15 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return viewersCount;
   }
 
-  private async emitPresenceUpdate(streamId: string, joinedUsername?: string) {
+  private async emitPresenceUpdate(
+    streamId: string,
+    joinedUser?: { userId?: string; username?: string },
+  ) {
     this.server.to(streamId).emit('streamPresenceUpdated', {
       streamId,
       viewersCount: await this.roomViewersCount(streamId),
-      joinedUsername,
+      joinedUserId: joinedUser?.userId,
+      joinedUsername: joinedUser?.username,
     });
   }
 
@@ -122,8 +126,11 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
     await client.join(payload.streamId);
     client.data.currentStreamId = payload.streamId;
-    const user = client.data.user as { username?: string } | undefined;
-    await this.emitPresenceUpdate(payload.streamId, user?.username);
+    const user = client.data.user as { sub?: string; username?: string } | undefined;
+    await this.emitPresenceUpdate(payload.streamId, {
+      userId: user?.sub,
+      username: user?.username,
+    });
     return { joined: true, streamId: payload.streamId };
   }
 

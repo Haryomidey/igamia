@@ -3,6 +3,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Room, RoomEvent, Track, type Participant, type TrackPublication } from 'livekit-client';
 import {
+  ChevronDown,
+  ChevronUp,
   Gift,
   Heart,
 } from 'lucide-react';
@@ -282,6 +284,7 @@ export default function LiveStream() {
       !recentViewerJoin ||
       recentViewerJoin.streamId !== resolvedStreamId ||
       !recentViewerJoin.joinedUsername ||
+      recentViewerJoin.joinedUserId === user?._id ||
       recentViewerJoin.joinedUsername === user?.username
     ) {
       return;
@@ -863,20 +866,14 @@ export default function LiveStream() {
       return;
     }
 
-    const stageVideoElement = stageVideoElementsRef.current[primaryTile.participantUserId];
-    const captureStream =
-      stageVideoElement && typeof stageVideoElement.captureStream === 'function'
-        ? stageVideoElement.captureStream()
-        : null;
     const videoTrack =
-      captureStream?.getVideoTracks()[0] ??
-      ((primaryTile.track as any)?.mediaStreamTrack as MediaStreamTrack | undefined);
+      ((primaryTile.track as any)?.mediaStreamTrack as MediaStreamTrack | undefined) ??
+      stageVideoElementsRef.current[primaryTile.participantUserId]?.captureStream?.().getVideoTracks()[0];
     const localAudioPublication = Array.from(
       livekitRoomRef.current?.localParticipant.audioTrackPublications.values() ?? [],
     ).find(hasTrackPublication);
     const localAudioTrack = localAudioPublication?.track;
     const audioTrack =
-      captureStream?.getAudioTracks()[0] ??
       ((localAudioTrack as any)?.mediaStreamTrack as MediaStreamTrack | undefined) ??
       (audioTracks[0] ? ((audioTracks[0].track as any)?.mediaStreamTrack as MediaStreamTrack | undefined) : undefined);
 
@@ -1056,6 +1053,36 @@ export default function LiveStream() {
           }}
         />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(223,165,58,0.12),transparent_30%)]" />
+        {canBrowseStreams && (
+          <div className="pointer-events-none absolute inset-y-0 left-4 z-20 flex items-center sm:left-6 lg:left-8">
+            <div className="pointer-events-auto flex flex-col gap-2">
+              <button
+                type="button"
+                title="Previous stream"
+                aria-label="Previous stream"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigateToRelativeStream('previous');
+                }}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/30 text-white backdrop-blur-md transition-colors hover:bg-black/45"
+              >
+                <ChevronUp size={18} />
+              </button>
+              <button
+                type="button"
+                title="Next stream"
+                aria-label="Next stream"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigateToRelativeStream('next');
+                }}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/30 text-white backdrop-blur-md transition-colors hover:bg-black/45"
+              >
+                <ChevronDown size={18} />
+              </button>
+            </div>
+          </div>
+        )}
         {!videoTiles.length && (
           <div className="pointer-events-none absolute inset-x-0 bottom-36 z-10 px-5 sm:bottom-40 sm:px-6 lg:px-8">
             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-primary">
@@ -1104,9 +1131,6 @@ export default function LiveStream() {
           recordingDurationSeconds={recordingDurationSeconds}
           isSavingRecording={isSavingRecording}
           onBack={() => navigate(-1)}
-          onPreviousStream={() => navigateToRelativeStream('previous')}
-          onNextStream={() => navigateToRelativeStream('next')}
-          canBrowseStreams={canBrowseStreams}
           onClose={() => navigate('/home')}
           onOpenInviteModal={() => setIsInviting(true)}
           onToggleMute={() => void handleToggleMute()}
@@ -1169,9 +1193,6 @@ export default function LiveStream() {
               <Heart size={14} fill="currentColor" />
               <span>{stream?.likesCount ?? 0}</span>
             </div>
-            <p className="mt-1 text-[8px] text-zinc-400">
-              {isParticipantView ? 'Total likes' : 'Tap to like'}
-            </p>
           </div>
         </div>
 

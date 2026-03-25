@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   ChevronLeft,
-  ChevronRight,
   Circle,
   Mic,
   MicOff,
@@ -51,9 +50,6 @@ export function StreamHeader({
   recordingDurationSeconds,
   isSavingRecording,
   onBack,
-  onPreviousStream,
-  onNextStream,
-  canBrowseStreams,
   onClose,
   onOpenInviteModal,
   onToggleMute,
@@ -82,9 +78,6 @@ export function StreamHeader({
   recordingDurationSeconds: number;
   isSavingRecording: boolean;
   onBack: () => void;
-  onPreviousStream: () => void;
-  onNextStream: () => void;
-  canBrowseStreams: boolean;
   onClose: () => void;
   onOpenInviteModal: () => void;
   onToggleMute: () => void;
@@ -101,7 +94,7 @@ export function StreamHeader({
   return (
     <div className="pointer-events-none absolute inset-x-0 top-0 z-20 bg-linear-to-b from-black/70 to-transparent px-4 pb-16 pt-4 sm:px-6 lg:px-8">
       <div className="pointer-events-auto flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center">
           <StreamIconButton
             title="Back"
             onClick={(event) => {
@@ -110,26 +103,6 @@ export function StreamHeader({
             }}
           >
             <ChevronLeft size={20} />
-          </StreamIconButton>
-          <StreamIconButton
-            title="Previous stream"
-            disabled={!canBrowseStreams}
-            onClick={(event) => {
-              event.stopPropagation();
-              onPreviousStream();
-            }}
-          >
-            <ChevronLeft size={16} />
-          </StreamIconButton>
-          <StreamIconButton
-            title="Next stream"
-            disabled={!canBrowseStreams}
-            onClick={(event) => {
-              event.stopPropagation();
-              onNextStream();
-            }}
-          >
-            <ChevronRight size={16} />
           </StreamIconButton>
         </div>
 

@@ -100,8 +100,13 @@ export class MediaService {
         .concat(apiSecret);
       const signature = createHash('sha1').update(signaturePayload).digest('hex');
 
+      const buffer = Buffer.from(rawBase64, 'base64');
+      const defaultExtension = mimeType.split('/')[1]?.split(';')[0] || 'bin';
+      const uploadFileName = (input.fileName?.trim() || `upload-${Date.now()}.${defaultExtension}`)
+        .replace(/[^\w.-]+/g, '-');
+
       const formData = new FormData();
-      formData.append('file', `data:${mimeType};base64,${rawBase64}`);
+      formData.append('file', new Blob([buffer], { type: mimeType }), uploadFileName);
       formData.append('api_key', apiKey);
       formData.append('timestamp', String(timestamp));
       formData.append('folder', folder);
