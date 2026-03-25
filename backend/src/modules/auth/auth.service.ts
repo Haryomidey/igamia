@@ -84,14 +84,22 @@ export class AuthService {
       await this.referralsService.recordSignupReferral(referredBy.id, user.id);
     }
 
-    const otp = this.generateOtp();
-    await this.usersService.updateOtp(user.id, otp, this.otpExpiryDate());
-    await this.mailService.sendOtp(user.email, 'Verify your iGamia account', otp);
+    const verifiedUser = await this.usersService.markEmailVerified(user.id);
+    const accessToken = await this.signToken({
+      id: verifiedUser!.id,
+      email: verifiedUser!.email,
+      username: verifiedUser!.username,
+    });
+
+    // Temporary direct-signup flow. Restore these lines when OTP verification is re-enabled.
+    // const otp = this.generateOtp();
+    // await this.usersService.updateOtp(user.id, otp, this.otpExpiryDate());
+    // await this.mailService.sendOtp(user.email, 'Verify your iGamia account', otp);
 
     return {
-      message: 'Registration successful. Verify your email with the OTP sent.',
-      userId: user.id,
-      email: user.email,
+      message: 'Registration successful.',
+      accessToken,
+      user: await this.usersService.safeProfile(verifiedUser!.id),
     };
   }
 

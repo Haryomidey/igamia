@@ -43,6 +43,10 @@ export class StreamsService {
     return new Types.ObjectId(id);
   }
 
+  private getPublicAppUrl() {
+    return this.configService.get<string>('PUBLIC_APP_URL', 'http://localhost:5173').replace(/\/$/, '');
+  }
+
   private async requireStream(streamId: string) {
     const stream = await this.streamModel.findById(streamId);
     if (!stream) {
@@ -170,7 +174,7 @@ export class StreamsService {
 
   async startStream(userId: string, username: string, dto: StartStreamDto) {
     const hostUser = await this.usersService.findById(userId);
-    const shareUrl = `https://igamia.app/stream/${new Types.ObjectId().toString()}`;
+    const shareUrl = `${this.getPublicAppUrl()}/stream/${new Types.ObjectId().toString()}`;
     const roomName = `igamia-stream-${userId}-${Date.now()}`;
     const title = dto.title.trim().slice(0, 120);
     const description = dto.description?.trim()
@@ -240,7 +244,7 @@ export class StreamsService {
         avatarUrl: '',
         joinedAt: new Date(),
       })),
-      shareUrl: `https://igamia.app/stream/${new Types.ObjectId().toString()}`,
+      shareUrl: `${this.getPublicAppUrl()}/stream/${new Types.ObjectId().toString()}`,
       livekitRoomName: roomName,
     });
 

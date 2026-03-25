@@ -62,7 +62,9 @@ export function useAuth() {
     setError(null);
 
     try {
-      const { data } = await api.post('/auth/register', payload);
+      const { data } = await api.post<AuthResponse>('/auth/register', payload);
+      setAccessToken(data.accessToken);
+      setUser(data.user);
       return data;
     } catch (err: any) {
       const message = getApiErrorMessage(err, 'Unable to register', 'register');

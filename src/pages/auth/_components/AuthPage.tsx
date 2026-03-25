@@ -164,8 +164,9 @@ export default function Auth({ mode }: AuthProps) {
         referralCode: signupForm.referralCode.trim() || undefined,
       });
 
-      toast.success('Account created. Enter the verification code we sent to your email.');
-      navigate('/verify', { state: { email: signupForm.email.trim() } });
+      // Temporary direct-signup flow. Send users to /verify again when OTP is restored.
+      toast.success('Account created successfully.');
+      navigate('/home', { replace: true });
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to create your account.');
     }

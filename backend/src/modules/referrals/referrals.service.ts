@@ -15,6 +15,10 @@ export class ReferralsService {
     private readonly walletService: WalletService,
   ) {}
 
+  private getPublicAppUrl() {
+    return this.configService.get<string>('PUBLIC_APP_URL', 'http://localhost:5173').replace(/\/$/, '');
+  }
+
   recordSignupReferral(referrerUserId: string, referredUserId: string) {
     return this.referralModel.create({
       referrerUserId: new Types.ObjectId(referrerUserId),
@@ -52,7 +56,7 @@ export class ReferralsService {
 
     return {
       referralCode: user.referralCode,
-      referralLink: `https://igamia.app/signup?ref=${user.referralCode}`,
+      referralLink: `${this.getPublicAppUrl()}/signup?ref=${user.referralCode}`,
       referrals,
       totalReferrals: referrals.length,
       totalRewardedIgc: (referrals as Array<{ rewardIgc?: number }>).reduce(

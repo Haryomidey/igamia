@@ -142,7 +142,7 @@ export default function Refer() {
               })}
             </div>
           ) : (
-            <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
+            <div className="rounded-4xl border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
               {loading ? 'Loading referrals...' : 'No referrals yet.'}
             </div>
           )}
