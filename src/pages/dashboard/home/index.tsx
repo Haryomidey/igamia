@@ -25,6 +25,7 @@ function formatViewers(value: number) {
 
 export default function Home() {
   const [search, setSearch] = useState('');
+  const [activeStreamIndex, setActiveStreamIndex] = useState(0);
   const { user } = useAuth();
   const { walletData } = useWallet(true);
   const { featuredGames, loading: gamesLoading, error: gamesError, fetchGames, fetchFeaturedGames } = useGames({ search });
@@ -36,14 +37,39 @@ export default function Home() {
     // The stream hook returns fresh function references, so we intentionally run once on mount here.
   }, []);
 
-  const topStream = activeStreams[0];
-  const secondaryStream = activeStreams[1];
+  const normalizedActiveStreamIndex =
+    activeStreams.length > 0 ? Math.min(activeStreamIndex, activeStreams.length - 1) : 0;
+  const topStream = activeStreams[normalizedActiveStreamIndex];
+  const secondaryStream =
+    activeStreams.length > 1
+      ? activeStreams[(normalizedActiveStreamIndex + 1) % activeStreams.length]
+      : null;
 
   const displayedGames = useMemo(() => featuredGames.slice(0, 4), [featuredGames]);
   const displayedActivities = useMemo(() => activities.slice(0, 4), [activities]);
 
   const refreshAll = async () => {
     await Promise.all([fetchActiveStreams(), fetchMatches(), fetchGames(), fetchFeaturedGames()]);
+  };
+
+  const canBrowseStreams = activeStreams.length > 1;
+
+  const showPreviousStream = () => {
+    if (!canBrowseStreams) {
+      return;
+    }
+
+    setActiveStreamIndex((current) =>
+      current === 0 ? activeStreams.length - 1 : current - 1,
+    );
+  };
+
+  const showNextStream = () => {
+    if (!canBrowseStreams) {
+      return;
+    }
+
+    setActiveStreamIndex((current) => (current + 1) % activeStreams.length);
   };
 
   return (
@@ -99,10 +125,18 @@ export default function Home() {
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-black uppercase tracking-widest text-white italic">Ongoing Streams</h2>
           <div className="flex gap-2">
-            <button className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors">
+            <button
+              onClick={showPreviousStream}
+              disabled={!canBrowseStreams}
+              className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
               <ChevronLeft size={20} />
             </button>
-            <button className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors">
+            <button
+              onClick={showNextStream}
+              disabled={!canBrowseStreams}
+              className="w-10 h-10 bg-white/5 border border-white/10 rounded-xl flex items-center justify-center hover:bg-white/10 transition-colors disabled:opacity-40"
+            >
               <ChevronRight size={20} />
             </button>
           </div>

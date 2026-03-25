@@ -160,6 +160,10 @@ export default function LiveStream() {
   }, [shouldStartLive]);
 
   const resolvedStreamId = shouldStartLive ? null : streamId ?? activeStreams[0]?._id ?? null;
+  const activeStreamIndex = resolvedStreamId
+    ? activeStreams.findIndex((activeStream) => activeStream._id === resolvedStreamId)
+    : -1;
+  const canBrowseStreams = activeStreams.length > 1 && activeStreamIndex >= 0;
   const host = stream?.participants.find((participant) => participant.role === 'host') ?? stream?.participants[0];
   const currentParticipant = stream?.participants.find((participant) => participant.userId === user?._id);
   const isHostView = Boolean(user?._id && stream?.hostUserId === user._id);
@@ -177,7 +181,6 @@ export default function LiveStream() {
     [stream?.participants],
   );
   const heroImage = useMemo(() => `https://picsum.photos/seed/${stream?._id ?? 'stream'}/1600/900`, [stream?._id]);
-  const floatingComments = useMemo(() => comments.slice(-5), [comments]);
   const inviteCandidates = useMemo(() => {
     const participantIds = new Set(stream?.participants.map((participant) => participant.userId) ?? []);
     return discoverUsers.filter((candidate) => !participantIds.has(candidate.id) && candidate.id !== user?._id);
@@ -951,6 +954,22 @@ export default function LiveStream() {
     setStartForm((current) => ({ ...current, [field]: value }));
   };
 
+  const navigateToRelativeStream = (direction: 'previous' | 'next') => {
+    if (!canBrowseStreams) {
+      return;
+    }
+
+    const offset = direction === 'next' ? 1 : -1;
+    const nextIndex =
+      (activeStreamIndex + offset + activeStreams.length) % activeStreams.length;
+    const nextStream = activeStreams[nextIndex];
+    if (!nextStream) {
+      return;
+    }
+
+    navigate(`/stream?streamId=${nextStream._id}`);
+  };
+
   const handlePledgeClaim = async (outcome: 'win' | 'loss' | 'draw' | 'dispute') => {
     if (!stream?.matchId) {
       return;
@@ -1057,6 +1076,9 @@ export default function LiveStream() {
           recordingDurationSeconds={recordingDurationSeconds}
           isSavingRecording={isSavingRecording}
           onBack={() => navigate(-1)}
+          onPreviousStream={() => navigateToRelativeStream('previous')}
+          onNextStream={() => navigateToRelativeStream('next')}
+          canBrowseStreams={canBrowseStreams}
           onClose={() => navigate('/home')}
           onOpenInviteModal={() => setIsInviting(true)}
           onToggleMute={() => void handleToggleMute()}
@@ -1194,7 +1216,7 @@ export default function LiveStream() {
           isSubmitting={isSubmitting}
           hostUsername={host?.username}
           streamDescription={stream?.description}
-          comments={floatingComments}
+          comments={comments}
           message={message}
           onMessageChange={setMessage}
           onSubmitMessage={(event) => {

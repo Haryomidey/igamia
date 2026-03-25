@@ -3,10 +3,6 @@ import { Send } from 'lucide-react';
 import { StreamCommentStack } from './StreamCommentStack';
 import type { StreamComment } from '../../../../hooks/useStream';
 
-function truncateText(value: string, maxLength: number) {
-  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
-}
-
 export function StreamFooter({
   isInvitedPending,
   isSubmitting,
@@ -30,6 +26,25 @@ export function StreamFooter({
   onAcceptInvite: () => void;
   onDeclineInvite: () => void;
 }) {
+  const commentEntries = [
+    ...(streamDescription?.trim()
+      ? [
+          {
+            id: 'stream-description',
+            type: 'description' as const,
+            username: hostUsername ?? 'Host',
+            message: streamDescription.trim(),
+          },
+        ]
+      : []),
+    ...comments.map((comment) => ({
+      id: comment._id,
+      type: 'comment' as const,
+      username: comment.username,
+      message: comment.message,
+    })),
+  ];
+
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-linear-to-t from-black via-black/55 to-transparent px-4 pb-4 pt-24 sm:px-6 lg:px-8">
       <div className="flex h-full flex-col justify-end gap-4">
@@ -66,21 +81,9 @@ export function StreamFooter({
           </div>
         )}
 
-        {streamDescription && (
-          <div className="pointer-events-auto rounded-[1.25rem] border border-white/10 bg-black/30 px-3 py-2 backdrop-blur-md">
-            <p className="text-[8px] font-black uppercase tracking-[0.14em] text-brand-accent sm:text-[9px] sm:tracking-[0.18em]">
-              Stream Description
-            </p>
-            <p
-              title={streamDescription}
-              className="mt-1 text-[11px] leading-4 text-zinc-200 sm:text-xs sm:leading-5"
-            >
-              {truncateText(streamDescription, 120)}
-            </p>
-          </div>
-        )}
-
-        <StreamCommentStack comments={comments} />
+        <div className="pointer-events-auto">
+          <StreamCommentStack comments={commentEntries} />
+        </div>
 
         <form
           onSubmit={(event) => {
