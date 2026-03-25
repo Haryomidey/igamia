@@ -37,6 +37,54 @@ export class MediaService {
       ?? `http://localhost:${this.configService.get<string>('PORT', '4000')}`;
   }
 
+  private async deleteLocalByUrl(mediaUrl: string) {
+    const publicBaseUrl = this.getPublicBaseUrl().replace(/\/+$/, '');
+    const normalizedUrl = mediaUrl.trim();
+    if (!normalizedUrl.startsWith(`${publicBaseUrl}/uploads/`)) {
+      return false;
+    }
+
+    const relativePath = normalizedUrl.slice(`${publicBaseUrl}/uploads/`.length);
+    if (!relativePath) {
+      return false;
+    }
+
+    const absolutePath = path.join(process.cwd(), 'uploads', ...relativePath.split('/'));
+    await fs.unlink(absolutePath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+    });
+
+    return true;
+  }
+
+  private getCloudinaryPublicId(mediaUrl: string) {
+    try {
+      const parsed = new URL(mediaUrl);
+      if (!parsed.hostname.includes('res.cloudinary.com')) {
+        return null;
+      }
+
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      const uploadIndex = parts.findIndex((part) => part === 'upload');
+      if (uploadIndex === -1) {
+        return null;
+      }
+
+      const publicIdParts = parts.slice(uploadIndex + 1).filter((part) => !/^v\d+$/.test(part));
+      if (!publicIdParts.length) {
+        return null;
+      }
+
+      const lastPart = publicIdParts[publicIdParts.length - 1] ?? '';
+      publicIdParts[publicIdParts.length - 1] = lastPart.replace(/\.[^.]+$/, '');
+      return publicIdParts.join('/');
+    } catch {
+      return null;
+    }
+  }
+
   private async saveLocally(input: UploadMediaInput, rawBase64: string, mimeType: string) {
     const uploadsRoot = path.join(process.cwd(), 'uploads');
     const safeFolder = input.folder.trim().replace(/^\/+|\/+$/g, '');
@@ -158,5 +206,47 @@ export class MediaService {
 
       return this.saveLocally(input, rawBase64, mimeType);
     }
+  }
+
+  async deleteMedia(mediaUrl: string, resourceType: UploadMediaInput['resourceType'] = 'auto') {
+    if (!mediaUrl?.trim()) {
+      throw new BadRequestException('Media URL is required');
+    }
+
+    if (await this.deleteLocalByUrl(mediaUrl)) {
+      return { deleted: true };
+    }
+
+    const publicId = this.getCloudinaryPublicId(mediaUrl);
+    if (!publicId) {
+      return { deleted: false };
+    }
+
+    const { cloudName, apiKey, apiSecret } = this.getCloudinaryConfig();
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = createHash('sha1')
+      .update(`public_id=${publicId}&timestamp=${timestamp}${apiSecret}`)
+      .digest('hex');
+
+    const formData = new FormData();
+    formData.append('public_id', publicId);
+    formData.append('timestamp', String(timestamp));
+    formData.append('api_key', apiKey);
+    formData.append('signature', signature);
+    formData.append('invalidate', 'true');
+
+    const response = await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType ?? 'auto'}/destroy`,
+      {
+        method: 'POST',
+        body: formData,
+      },
+    );
+
+    if (!response.ok) {
+      throw new InternalServerErrorException('Unable to delete media');
+    }
+
+    return { deleted: true };
   }
 }

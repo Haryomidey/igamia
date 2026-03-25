@@ -15,6 +15,7 @@ export type Stream = {
   commentsCount: number;
   sharesCount: number;
   viewersCount: number;
+  earningsUsd?: number;
   recordingUrl?: string;
   recordedAt?: string;
   recordingDurationSeconds?: number;
@@ -43,6 +44,7 @@ export type StreamGiftEvent = {
   amount: number;
   giftedBy: string;
   creditedAmount: number;
+  earningsUsd?: number;
 };
 
 export type StreamLikeEvent = {
@@ -138,6 +140,7 @@ export function useStream() {
     });
 
     socketRef.current.on('streamGifted', (payload: StreamGiftEvent) => {
+      setStream((prev) => (prev ? { ...prev, earningsUsd: payload.earningsUsd ?? prev.earningsUsd } : prev));
       setRecentGift(payload);
     });
 
@@ -265,6 +268,12 @@ export function useStream() {
     return data;
   };
 
+  const deleteRecording = async (streamId: string) => {
+    const { data } = await api.delete(`/streams/${streamId}/recording`);
+    setStream((prev) => (prev ? { ...prev, ...(data.stream ?? {}) } : prev));
+    return data;
+  };
+
   const fetchMyRecordings = async () => {
     const { data } = await api.get<Stream[]>('/streams/me/recordings');
     return data;
@@ -308,6 +317,7 @@ export function useStream() {
     updateMediaState,
     getConnectionDetails,
     saveRecording,
+    deleteRecording,
     fetchMyRecordings,
   };
 }

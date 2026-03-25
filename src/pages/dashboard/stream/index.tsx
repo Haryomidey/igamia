@@ -137,6 +137,7 @@ export default function LiveStream() {
   const [floatingHearts, setFloatingHearts] = useState<FloatingHeart[]>([]);
   const [activityOverlays, setActivityOverlays] = useState<ActivityOverlay[]>([]);
   const [likeTicker, setLikeTicker] = useState<string | null>(null);
+  const [giftTicker, setGiftTicker] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [roomReconnectKey, setRoomReconnectKey] = useState(0);
   const [mediaStates, setMediaStates] = useState<Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>>({});
@@ -260,12 +261,25 @@ export default function LiveStream() {
 
     const id = Date.now();
     setActivityOverlays((current) => [...current.slice(-2), { id, message: `${recentGift.giftedBy} sent $${recentGift.amount.toFixed(2)}`, accent: 'gift' }]);
+    if (isHostView) {
+      setGiftTicker(`${recentGift.giftedBy} sent $${recentGift.amount.toFixed(2)} · +$${recentGift.creditedAmount.toFixed(2)}`);
+    }
     const timeout = window.setTimeout(() => {
       setActivityOverlays((current) => current.filter((entry) => entry.id !== id));
     }, 3200);
+    const tickerTimeout = window.setTimeout(() => {
+      setGiftTicker((current) =>
+        current === `${recentGift.giftedBy} sent $${recentGift.amount.toFixed(2)} · +$${recentGift.creditedAmount.toFixed(2)}`
+          ? null
+          : current,
+      );
+    }, 3600);
 
-    return () => window.clearTimeout(timeout);
-  }, [recentGift, resolvedStreamId]);
+    return () => {
+      window.clearTimeout(timeout);
+      window.clearTimeout(tickerTimeout);
+    };
+  }, [isHostView, recentGift, resolvedStreamId]);
 
   useEffect(() => {
     if (!recentLike || recentLike.streamId !== resolvedStreamId) {
@@ -1104,7 +1118,7 @@ export default function LiveStream() {
         />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(223,165,58,0.12),transparent_30%)]" />
         {canBrowseStreams && (
-          <div className="pointer-events-none absolute inset-y-0 left-3 z-20 flex items-center sm:left-6 lg:left-8">
+          <div className="pointer-events-none absolute left-2.5 top-24 z-20 sm:inset-y-0 sm:left-6 sm:flex sm:items-center lg:left-8">
             <div className="pointer-events-auto flex flex-col gap-2">
               <button
                 type="button"
@@ -1114,7 +1128,7 @@ export default function LiveStream() {
                   event.stopPropagation();
                   navigateToRelativeStream('previous');
                 }}
-                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/30 text-white backdrop-blur-md transition-colors hover:bg-black/45"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/30 text-white backdrop-blur-md transition-colors hover:bg-black/45 sm:h-11 sm:w-11"
               >
                 <ChevronUp size={18} />
               </button>
@@ -1126,7 +1140,7 @@ export default function LiveStream() {
                   event.stopPropagation();
                   navigateToRelativeStream('next');
                 }}
-                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/30 text-white backdrop-blur-md transition-colors hover:bg-black/45"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/30 text-white backdrop-blur-md transition-colors hover:bg-black/45 sm:h-11 sm:w-11"
               >
                 <ChevronDown size={18} />
               </button>
@@ -1134,22 +1148,22 @@ export default function LiveStream() {
           </div>
         )}
         {!videoTiles.length && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-32 z-10 px-4 sm:bottom-40 sm:px-6 lg:px-8">
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-primary">
-              {connectionStatus === 'connecting' ? 'Connecting to room' : 'Waiting for live video'}
+          <div className="pointer-events-none absolute inset-x-0 bottom-32 z-10 px-3 sm:bottom-40 sm:px-6 lg:px-8">
+            <p className="text-[8px] font-black uppercase tracking-[0.22em] text-brand-primary">
+              {connectionStatus === 'connecting' ? 'Connecting' : 'Waiting'}
             </p>
             <h2
               title={stream?.title ?? 'Live Session'}
-              className="mt-3 max-w-2xl text-xl font-black uppercase italic text-white sm:text-4xl"
+              className="mt-2 max-w-xl text-lg font-black uppercase italic text-white sm:mt-3 sm:max-w-2xl sm:text-4xl"
             >
-              {truncateText(stream?.title ?? 'Live Session', 68)}
+              {truncateText(stream?.title ?? 'Live Session', 44)}
             </h2>
-            <p className="mt-2 max-w-xl text-xs leading-relaxed text-zinc-300 sm:text-base">
+            <p className="mt-1.5 max-w-sm text-[11px] leading-relaxed text-zinc-300 sm:mt-2 sm:max-w-xl sm:text-sm">
               {connectionStatus === 'error'
-                ? 'The live room could not be reached. Check your LiveKit configuration and reconnect.'
+                ? 'Room unavailable. Reconnect.'
                 : isHostView
-                  ? 'Your live camera feed will appear here as soon as publishing starts.'
-                  : 'The streamer feed will appear here as soon as the host camera is live.'}
+                  ? 'Your camera will appear here.'
+                  : 'The live feed will appear here.'}
             </p>
             {connectionStatus !== 'connected' && (
               <button
@@ -1157,7 +1171,7 @@ export default function LiveStream() {
                   event.stopPropagation();
                   void handleReconnectToLive();
                 }}
-                className="pointer-events-auto mt-4 rounded-full border border-white/10 bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white backdrop-blur-md transition-colors hover:bg-white/20 sm:text-xs"
+                className="pointer-events-auto mt-3 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.14em] text-white backdrop-blur-md transition-colors hover:bg-white/20 sm:mt-4 sm:px-4 sm:py-2 sm:text-xs"
               >
                 {connectionStatus === 'connecting' ? 'Reconnecting...' : 'Reconnect'}
               </button>
@@ -1179,6 +1193,7 @@ export default function LiveStream() {
           isCameraPaused={isCameraPaused}
           isRecording={isRecording}
           recordingDurationSeconds={recordingDurationSeconds}
+          streamEarningsUsd={stream?.earningsUsd}
           isSavingRecording={isSavingRecording}
           onBack={() => navigate(-1)}
           onClose={() => navigate('/home')}
@@ -1197,8 +1212,27 @@ export default function LiveStream() {
           }}
         />
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-20 px-3 sm:inset-y-0 sm:right-0 sm:left-auto sm:flex sm:w-28 sm:flex-col sm:items-end sm:justify-end sm:gap-3 sm:px-6 sm:pb-36">
-          <div className="pointer-events-auto ml-auto flex max-w-max items-center gap-2 rounded-full border border-white/10 bg-black/35 px-2 py-2 shadow-xl backdrop-blur-xl sm:ml-0 sm:flex-col sm:rounded-4xl sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
+        <AnimatePresence>
+          {giftTicker && (
+            <motion.div
+              key={giftTicker}
+              initial={{ opacity: 0, y: -10, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.98 }}
+              className="pointer-events-none absolute left-1/2 top-24 z-30 w-[min(calc(100vw-1.5rem),24rem)] -translate-x-1/2 rounded-[1.25rem] border border-emerald-400/20 bg-emerald-500/12 px-3 py-2.5 text-center shadow-2xl backdrop-blur-xl sm:top-32 sm:w-[min(calc(100vw-2rem),28rem)] sm:px-4 sm:py-3"
+            >
+              <p className="text-[8px] font-black uppercase tracking-[0.18em] text-emerald-300">
+                Gift Received
+              </p>
+              <p className="mt-1.5 text-xs font-black uppercase italic text-white sm:mt-2 sm:text-base">
+                {giftTicker}
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="pointer-events-none absolute right-2.5 bottom-[5.6rem] z-20 sm:inset-y-0 sm:right-0 sm:left-auto sm:flex sm:w-28 sm:flex-col sm:items-end sm:justify-end sm:gap-3 sm:px-6 sm:pb-36">
+          <div className="pointer-events-auto ml-auto flex max-w-[min(82vw,16rem)] items-center gap-2 rounded-full border border-white/10 bg-black/35 px-2 py-2 shadow-xl backdrop-blur-xl sm:ml-0 sm:max-w-max sm:flex-col sm:rounded-4xl sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
           <AnimatePresence>
             {floatingHearts.map((heart) => (
               <motion.div key={heart.id} initial={{ opacity: 0, y: 0, scale: 0.7 }} animate={{ opacity: 1, y: -160, scale: 1.1 }} exit={{ opacity: 0 }} transition={{ duration: 1.35, ease: 'easeOut' }} className="absolute bottom-24 text-brand-primary" style={{ right: `${100 - heart.left}%`, rotate: `${heart.rotate}deg` }}>
@@ -1209,7 +1243,7 @@ export default function LiveStream() {
 
           <AnimatePresence>
             {activityOverlays.map((entry) => (
-              <motion.div key={entry.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className={`max-w-56 rounded-2xl border px-3 py-2 text-right text-[11px] font-black uppercase tracking-[0.18em] backdrop-blur-md ${
+              <motion.div key={entry.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className={`max-w-32 rounded-2xl border px-2 py-1.5 text-right text-[7px] font-black uppercase tracking-[0.12em] backdrop-blur-md sm:max-w-56 sm:px-3 sm:py-2 sm:text-[11px] sm:tracking-[0.18em] ${
                 entry.accent === 'gift'
                   ? 'border-brand-accent/30 bg-brand-accent/20 text-brand-accent'
                   : 'border-white/15 bg-white/10 text-white'
@@ -1226,7 +1260,7 @@ export default function LiveStream() {
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }}
-                className="rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.14em] text-zinc-200 backdrop-blur-md sm:text-[9px]"
+                className="rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-200 backdrop-blur-md sm:px-3 sm:py-1.5 sm:text-[9px]"
               >
                 {likeTicker}
               </motion.div>
@@ -1234,12 +1268,12 @@ export default function LiveStream() {
           </AnimatePresence>
 
           {!isParticipantView && (
-            <button onClick={(event) => { event.stopPropagation(); setIsGifting(true); }} className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors backdrop-blur-md hover:bg-white/15 sm:h-14 sm:w-14">
+            <button onClick={(event) => { event.stopPropagation(); setIsGifting(true); }} className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors backdrop-blur-md hover:bg-white/15 sm:h-14 sm:w-14">
               <Gift size={20} className="text-brand-accent" />
             </button>
           )}
 
-          <div className="rounded-full border border-white/10 bg-black/30 px-3 py-2 text-center text-[9px] font-black uppercase tracking-[0.16em] backdrop-blur-md sm:text-[10px] sm:tracking-[0.2em]">
+          <div className="rounded-full border border-white/10 bg-black/30 px-2.5 py-2 text-center text-[8px] font-black uppercase tracking-[0.14em] backdrop-blur-md sm:px-3 sm:text-[10px] sm:tracking-[0.2em]">
             <div className="flex items-center justify-center gap-1 text-brand-primary">
               <Heart size={14} fill="currentColor" />
               <span>{stream?.likesCount ?? 0}</span>
@@ -1249,12 +1283,12 @@ export default function LiveStream() {
         </div>
 
         {isPledgeStream && isParticipantView && pledgeMatch && (
-          <div className="pointer-events-none absolute right-4 top-24 z-20 sm:right-6 sm:top-28 lg:right-8">
+          <div className="pointer-events-none absolute inset-x-2.5 top-24 z-20 sm:inset-x-auto sm:right-6 sm:top-28 lg:right-8">
             <div
-              className="pointer-events-auto inline-flex max-w-[min(82vw,34rem)] flex-wrap items-center justify-end gap-2 rounded-full border border-white/10 bg-black/45 px-2.5 py-2 shadow-xl backdrop-blur-md"
+              className="pointer-events-auto inline-flex max-w-full flex-wrap items-center justify-start gap-1.5 rounded-[1.25rem] border border-white/10 bg-black/45 px-2 py-1.5 shadow-xl backdrop-blur-md sm:max-w-[min(82vw,34rem)] sm:justify-end sm:gap-2 sm:rounded-full sm:px-2.5 sm:py-2"
               onClick={(event) => event.stopPropagation()}
             >
-              <span className="rounded-full bg-white/10 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-200 sm:text-[9px]">
+              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-200 sm:px-2.5 sm:py-1 sm:text-[9px]">
                 {pledgeMatch.status === 'settled'
                   ? pledgeMatch.isDraw
                     ? 'Draw'
@@ -1275,36 +1309,36 @@ export default function LiveStream() {
                 <>
                   <button
                     onClick={() => void handlePledgeClaim('win')}
-                    className="rounded-full bg-emerald-500/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-emerald-300 sm:text-[9px]"
+                    className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-emerald-300 sm:px-3 sm:py-1.5 sm:text-[9px]"
                   >
                     Win
                   </button>
                   <button
                     onClick={() => void handlePledgeClaim('loss')}
-                    className="rounded-full bg-rose-500/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-rose-200 sm:text-[9px]"
+                    className="rounded-full bg-rose-500/20 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-rose-200 sm:px-3 sm:py-1.5 sm:text-[9px]"
                   >
                     Lose
                   </button>
                   <button
                     onClick={() => void handlePledgeClaim('draw')}
-                    className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-white sm:text-[9px]"
+                    className="rounded-full bg-white/10 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-white sm:px-3 sm:py-1.5 sm:text-[9px]"
                   >
                     Draw
                   </button>
                 </>
               )}
               {pendingClaim && isClaimOwner && (
-                <span className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-300 sm:text-[9px]">
+                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-300 sm:px-3 sm:py-1.5 sm:text-[9px]">
                   Waiting for response
                 </span>
               )}
               {pendingClaim && (
-                <span className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-200 sm:text-[9px]">
+                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-200 sm:px-3 sm:py-1.5 sm:text-[9px]">
                   {pendingClaim.claimedByUsername} claimed {pendingClaim.outcome}
                 </span>
               )}
               {pendingClaim?.note && (
-                <span className="rounded-full bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-zinc-300 sm:text-[9px]">
+                <span className="rounded-full bg-white/10 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-300 sm:px-3 sm:py-1.5 sm:text-[9px]">
                   {pendingClaim.note}
                 </span>
               )}
@@ -1312,13 +1346,13 @@ export default function LiveStream() {
                 <>
                   <button
                     onClick={() => void handlePledgeClaimDecision('reject')}
-                    className="rounded-full bg-rose-500/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-rose-200 sm:text-[9px]"
+                    className="rounded-full bg-rose-500/20 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-rose-200 sm:px-3 sm:py-1.5 sm:text-[9px]"
                   >
                     Reject
                   </button>
                   <button
                     onClick={() => void handlePledgeClaimDecision('approve')}
-                    className="rounded-full bg-emerald-500/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-emerald-300 sm:text-[9px]"
+                    className="rounded-full bg-emerald-500/20 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-emerald-300 sm:px-3 sm:py-1.5 sm:text-[9px]"
                   >
                     Accept
                   </button>
@@ -1330,7 +1364,7 @@ export default function LiveStream() {
                     ? navigate(`/disputes/${pledgeMatch._id}`)
                     : void handlePledgeClaim('dispute')
                 }
-                className="rounded-full bg-brand-primary/20 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.16em] text-brand-primary sm:text-[9px]"
+                className="rounded-full bg-brand-primary/20 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-brand-primary sm:px-3 sm:py-1.5 sm:text-[9px]"
               >
                 {pledgeMatch.status === 'disputed' ? 'Open' : 'Dispute'}
               </button>

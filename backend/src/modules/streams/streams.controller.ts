@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StreamsService } from './streams.service';
@@ -194,6 +194,7 @@ export class StreamsController {
       amount: dto.amount,
       giftedBy: user.username,
       creditedAmount: result.creditedAmount,
+      earningsUsd: result.earningsUsd,
     });
     return result;
   }
@@ -212,6 +213,15 @@ export class StreamsController {
     },
   ) {
     return this.streamsService.saveRecording(streamId, user.sub, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':streamId/recording')
+  deleteRecording(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    return this.streamsService.deleteRecording(streamId, user.sub);
   }
 
   @UseGuards(JwtAuthGuard)

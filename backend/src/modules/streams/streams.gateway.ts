@@ -263,6 +263,7 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
       amount: payload.amount,
       giftedBy: client.data.user.username,
       creditedAmount: result.creditedAmount,
+      earningsUsd: result.earningsUsd,
     });
     return result;
   }

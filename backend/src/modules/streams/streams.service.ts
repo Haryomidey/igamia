@@ -327,6 +327,26 @@ export class StreamsService {
     };
   }
 
+  async deleteRecording(streamId: string, userId: string) {
+    const stream = await this.requireStream(streamId);
+    this.ensureHost(stream, userId);
+
+    if (!stream.recordingUrl?.trim()) {
+      throw new NotFoundException('Recorded stream not found');
+    }
+
+    await this.mediaService.deleteMedia(stream.recordingUrl, 'video');
+    stream.recordingUrl = '';
+    stream.recordedAt = undefined;
+    stream.recordingDurationSeconds = 0;
+    await stream.save();
+
+    return {
+      message: 'Recording deleted successfully',
+      stream: stream.toObject(),
+    };
+  }
+
   async inviteStreamer(streamId: string, userId: string, dto: InviteStreamerDto) {
     const stream = await this.requireStream(streamId);
     this.ensureHost(stream, userId);
@@ -606,11 +626,15 @@ export class StreamsService {
       description: dto.description || `Gift sent during ${stream.title}`,
     } as GiftDto);
 
+    stream.earningsUsd = Number(((stream.earningsUsd ?? 0) + result.creditedAmount).toFixed(2));
+    await stream.save();
+
     return {
       ...result,
       streamId,
       streamTitle: stream.title,
       hostUserId: stream.hostUserId.toString(),
+      earningsUsd: stream.earningsUsd,
     };
   }
 }

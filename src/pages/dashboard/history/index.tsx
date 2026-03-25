@@ -1,14 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Trophy, Play, Users, Circle, MoreVertical, ChevronRight, Video, CalendarClock } from 'lucide-react';
+import { ArrowLeft, Trophy, Play, Users, Circle, MoreVertical, ChevronRight, Video, CalendarClock, Trash2, Radio } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { CommunityVideoPlayer } from '../../../components/CommunityVideoPlayer';
+import { useAuth } from '../../../hooks/useAuth';
+import { useToast } from '../../../components/ToastProvider';
 import { useGames } from '../../../hooks/useGames';
-import { useStream } from '../../../hooks/useStream';
+import { useStream, type Stream } from '../../../hooks/useStream';
 
 export default function History() {
+  const { user } = useAuth();
+  const toast = useToast();
   const { featuredGames } = useGames({ featured: true });
-  const { activeStreams, fetchActiveStreams, fetchMyRecordings } = useStream();
-  const [recordings, setRecordings] = useState<any[]>([]);
+  const { activeStreams, fetchActiveStreams, fetchMyRecordings, deleteRecording } = useStream();
+  const [recordings, setRecordings] = useState<Stream[]>([]);
+  const [deletingRecordingId, setDeletingRecordingId] = useState<string | null>(null);
 
   useEffect(() => {
     void fetchActiveStreams();
@@ -17,6 +22,11 @@ export default function History() {
   }, []);
 
   const featuredGame = featuredGames[0];
+  const activeParticipationStream = user?._id
+    ? activeStreams.find((stream) =>
+        stream.participants.some((participant) => participant.userId === user._id),
+      ) ?? null
+    : null;
   const formatRecordingDuration = (seconds?: number) => {
     const total = Math.max(0, seconds ?? 0);
     const hrs = Math.floor(total / 3600);
@@ -28,6 +38,24 @@ export default function History() {
     }
 
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const handleDeleteRecording = async (recording: Stream) => {
+    const confirmed = window.confirm(`Delete "${recording.title}" from your recorded streams?`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeletingRecordingId(recording._id);
+      await deleteRecording(recording._id);
+      setRecordings((current) => current.filter((entry) => entry._id !== recording._id));
+      toast.success('Recorded stream deleted.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to delete recorded stream.');
+    } finally {
+      setDeletingRecordingId(null);
+    }
   };
 
   return (
@@ -58,14 +86,28 @@ export default function History() {
         <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent opacity-60" />
 
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="bg-[#1a1635]/80 backdrop-blur-xl border border-white/10 p-8 rounded-[2rem] flex flex-col items-center gap-4 shadow-2xl">
-            <div className="relative w-16 h-16 flex items-center justify-center">
-              <Circle size={64} className="text-brand-primary/20 absolute" strokeWidth={4} />
-              <Circle size={64} className="text-brand-primary absolute" strokeWidth={4} strokeDasharray="100 200" />
-              <Play size={24} className="text-white fill-current ml-1" />
+          {activeParticipationStream ? (
+            <Link
+              to={`/stream?streamId=${activeParticipationStream._id}`}
+              className="bg-[#1a1635]/85 backdrop-blur-xl border border-white/10 p-8 rounded-[2rem] flex flex-col items-center gap-4 shadow-2xl transition-transform hover:scale-[1.02]"
+            >
+              <div className="relative w-16 h-16 flex items-center justify-center">
+                <Circle size={64} className="text-brand-primary/20 absolute" strokeWidth={4} />
+                <Circle size={64} className="text-brand-primary absolute" strokeWidth={4} strokeDasharray="100 200" />
+                <Radio size={22} className="text-white" />
+              </div>
+              <span className="text-[10px] font-black text-white uppercase tracking-[0.3em]">Resume Live</span>
+            </Link>
+          ) : (
+            <div className="bg-[#1a1635]/80 backdrop-blur-xl border border-white/10 p-8 rounded-[2rem] flex flex-col items-center gap-4 shadow-2xl">
+              <div className="relative w-16 h-16 flex items-center justify-center">
+                <Circle size={64} className="text-brand-primary/20 absolute" strokeWidth={4} />
+                <Circle size={64} className="text-brand-primary absolute" strokeWidth={4} strokeDasharray="100 200" />
+                <Play size={24} className="text-white fill-current ml-1" />
+              </div>
+              <span className="text-[10px] font-black text-white uppercase tracking-[0.3em]">Resume Playing</span>
             </div>
-            <span className="text-[10px] font-black text-white uppercase tracking-[0.3em]">Resume Playing</span>
-          </div>
+          )}
         </div>
 
         <div className="absolute bottom-10 left-10 right-10 flex flex-col gap-4">
@@ -75,7 +117,11 @@ export default function History() {
           <div className="flex items-center justify-between text-[10px] font-black text-zinc-400 uppercase tracking-widest">
             <div className="flex items-center gap-6">
               <Play size={16} className="text-white fill-current" />
-              <span>{featuredGame?.genre ?? 'Game'} / {featuredGame?.publisher ?? 'Publisher'}</span>
+              <span>
+                {activeParticipationStream
+                  ? `${activeParticipationStream.title} / ${activeParticipationStream.participants[0]?.username ?? 'Live Host'}`
+                  : `${featuredGame?.genre ?? 'Game'} / ${featuredGame?.publisher ?? 'Publisher'}`}
+              </span>
             </div>
             <MoreVertical size={16} />
           </div>
@@ -128,6 +174,17 @@ export default function History() {
                       <Play size={12} className="text-brand-accent fill-current" />
                       {formatRecordingDuration(recording.recordingDurationSeconds)}
                     </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteRecording(recording)}
+                      disabled={deletingRecordingId === recording._id}
+                      className="inline-flex items-center gap-2 rounded-full border border-red-500/20 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                    >
+                      <Trash2 size={12} />
+                      {deletingRecordingId === recording._id ? 'Deleting...' : 'Delete'}
+                    </button>
                   </div>
                 </div>
               </article>

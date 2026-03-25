@@ -67,6 +67,9 @@ export class Stream {
   @Prop({ default: 0 })
   viewersCount: number;
 
+  @Prop({ default: 0 })
+  earningsUsd: number;
+
   @Prop()
   endedAt?: Date;
 
