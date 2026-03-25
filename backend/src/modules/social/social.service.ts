@@ -45,13 +45,12 @@ export type SocialFriend = {
   fullName: string;
   avatarUrl: string;
   bio: string;
-};
-
-export type SocialUserProfile = SocialFriend & {
   connected: boolean;
   pendingRequestSent: boolean;
   pendingRequestReceived: boolean;
 };
+
+export type SocialUserProfile = SocialFriend;
 
 @Injectable()
 export class SocialService {
@@ -175,6 +174,7 @@ export class SocialService {
         pendingRequestSent: outgoingSet.has(user._id.toString()),
         pendingRequestReceived: incomingSet.has(user._id.toString()),
       }))
+      .filter((user) => !user.connected)
       .sort((left, right) => Number(right.connected) - Number(left.connected) || left.username.localeCompare(right.username));
   }
 
@@ -257,6 +257,9 @@ export class SocialService {
       fullName: user.fullName,
       avatarUrl: user.avatarUrl,
       bio: user.bio,
+      connected: true,
+      pendingRequestSent: false,
+      pendingRequestReceived: false,
     }));
   }
 

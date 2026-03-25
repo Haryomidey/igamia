@@ -24,7 +24,7 @@ export default function Auth({ mode }: AuthProps) {
   const locationState = (location.state as NavigationState | null) ?? null;
 
   const [loginForm, setLoginForm] = useState({
-    email: locationState?.email ?? '',
+    identifier: locationState?.email ?? '',
     password: '',
   });
   const [signupForm, setSignupForm] = useState({
@@ -52,23 +52,60 @@ export default function Auth({ mode }: AuthProps) {
       return signupForm.email;
     }
 
-    return locationState?.email ?? signupForm.email ?? loginForm.email ?? forgotEmail;
-  }, [forgotEmail, locationState?.email, loginForm.email, mode, signupForm.email]);
+    return locationState?.email ?? signupForm.email ?? loginForm.identifier ?? forgotEmail;
+  }, [forgotEmail, locationState?.email, loginForm.identifier, mode, signupForm.email]);
 
   const redirectAfterAuth = locationState?.from?.pathname || '/home';
 
   const handleOtpChange = (index: number, value: string) => {
-    if (value.length > 1) {
+    const sanitizedValue = value.replace(/\D/g, '');
+
+    if (!sanitizedValue) {
+      const nextOtp = [...verifyOtp];
+      nextOtp[index] = '';
+      setVerifyOtp(nextOtp);
+      return;
+    }
+
+    if (sanitizedValue.length > 1) {
+      const nextOtp = [...verifyOtp];
+      sanitizedValue
+        .slice(0, nextOtp.length - index)
+        .split('')
+        .forEach((digit, offset) => {
+          nextOtp[index + offset] = digit;
+        });
+      setVerifyOtp(nextOtp);
+
+      const nextFocusIndex = Math.min(index + sanitizedValue.length, nextOtp.length - 1);
+      document.getElementById(`otp-${nextFocusIndex}`)?.focus();
       return;
     }
 
     const nextOtp = [...verifyOtp];
-    nextOtp[index] = value;
+    nextOtp[index] = sanitizedValue;
     setVerifyOtp(nextOtp);
 
-    if (value && index < nextOtp.length - 1) {
+    if (sanitizedValue && index < nextOtp.length - 1) {
       document.getElementById(`otp-${index + 1}`)?.focus();
     }
+  };
+
+  const handleOtpPaste = (event: React.ClipboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    const pastedDigits = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, verifyOtp.length);
+    if (!pastedDigits) {
+      return;
+    }
+
+    const nextOtp = [...verifyOtp];
+    pastedDigits.split('').forEach((digit, index) => {
+      nextOtp[index] = digit;
+    });
+    setVerifyOtp(nextOtp);
+
+    const nextFocusIndex = Math.min(pastedDigits.length - 1, nextOtp.length - 1);
+    document.getElementById(`otp-${nextFocusIndex}`)?.focus();
   };
 
   const renderPasswordField = ({
@@ -139,7 +176,7 @@ export default function Auth({ mode }: AuthProps) {
 
     try {
       await auth.login({
-        email: loginForm.email.trim(),
+        email: loginForm.identifier.trim(),
         password: loginForm.password,
       });
 
@@ -309,13 +346,13 @@ export default function Auth({ mode }: AuthProps) {
             </div>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Email Address</label>
+                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Email Or Username</label>
                 <input
-                  type="email"
+                  type="text"
                   required
-                  value={loginForm.email}
-                  onChange={(e) => setLoginForm((current) => ({ ...current, email: e.target.value }))}
-                  placeholder="alex@example.com"
+                  value={loginForm.identifier}
+                  onChange={(e) => setLoginForm((current) => ({ ...current, identifier: e.target.value }))}
+                  placeholder="alex@example.com or alexgamer"
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
                 />
               </div>
@@ -324,7 +361,7 @@ export default function Auth({ mode }: AuthProps) {
                   <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Password</label>
                   <button
                     type="button"
-                    onClick={() => navigate('/forgot-password', { state: { email: loginForm.email.trim() } })}
+                    onClick={() => navigate('/forgot-password', { state: { email: loginForm.identifier.trim() } })}
                     className="text-[10px] font-bold text-brand-primary hover:underline"
                   >
                     Forgot Password?
@@ -392,6 +429,7 @@ export default function Auth({ mode }: AuthProps) {
                     maxLength={1}
                     value={digit}
                     onChange={(e) => handleOtpChange(i, e.target.value)}
+                    onPaste={handleOtpPaste}
                     className="w-16 h-16 bg-white/5 border border-white/10 rounded-2xl text-center text-2xl font-black text-brand-primary focus:outline-none focus:border-brand-primary transition-colors"
                   />
                 ))}

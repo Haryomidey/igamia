@@ -50,6 +50,16 @@ export class UsersService {
     return this.userModel.findOne({ email: email.toLowerCase() });
   }
 
+  findByEmailOrUsername(identifier: string) {
+    const trimmedIdentifier = identifier.trim();
+    return this.userModel.findOne({
+      $or: [
+        { email: trimmedIdentifier.toLowerCase() },
+        { username: trimmedIdentifier },
+      ],
+    });
+  }
+
   findById(userId: string) {
     return this.userModel.findById(userId);
   }

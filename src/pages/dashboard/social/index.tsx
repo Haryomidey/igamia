@@ -16,6 +16,7 @@ import { useSocial, type SocialUser } from '../../../hooks/useSocial';
 import { useWallet } from '../../../hooks/useWallet';
 import { useToast } from '../../../components/ToastProvider';
 import { useMediaUpload } from '../../../hooks/useMediaUpload';
+import { CommunityVideoPlayer } from '../../../components/CommunityVideoPlayer';
 
 type CommunityTab = 'feed' | 'friends' | 'discover' | 'requests';
 
@@ -34,6 +35,8 @@ export default function Social() {
   const [search, setSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [sendingRequestUserId, setSendingRequestUserId] = useState<string | null>(null);
+  const [acceptingRequestId, setAcceptingRequestId] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
   const pendingPreviewUrlRef = useRef<string | null>(null);
   const toast = useToast();
@@ -163,19 +166,25 @@ export default function Social() {
 
   const handleSendRequest = async (targetUserId: string) => {
     try {
+      setSendingRequestUserId(targetUserId);
       await sendRequest(targetUserId);
       toast.success('Connection request sent.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to send request.');
+    } finally {
+      setSendingRequestUserId(null);
     }
   };
 
   const handleAcceptRequest = async (requestId: string) => {
     try {
+      setAcceptingRequestId(requestId);
       await acceptRequest(requestId);
       toast.success('Connection request accepted.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to accept request.');
+    } finally {
+      setAcceptingRequestId(null);
     }
   };
 
@@ -250,6 +259,7 @@ export default function Social() {
               }`}
             >
               {tab.label}
+              {typeof tab.count === 'number' && tab.count > 0 ? ` (${tab.count})` : ''}
             </button>
           ))}
         </div>
@@ -295,10 +305,10 @@ export default function Social() {
                 </div>
 
                 {pendingMedia.mediaType === 'video' ? (
-                  <video
+                  <CommunityVideoPlayer
                     src={pendingMedia.previewUrl}
-                    controls
-                    className="max-h-[22rem] w-full rounded-[1.25rem] bg-black/40 object-cover"
+                    className="max-h-[22rem] w-full rounded-[1.25rem]"
+                    mutedByDefault
                   />
                 ) : (
                   <img
@@ -370,7 +380,10 @@ export default function Social() {
                   {post.content ? <p className="mt-5 break-words text-sm leading-relaxed text-zinc-200 sm:text-[15px]">{post.content}</p> : null}
                   {post.mediaUrl ? (
                     post.mediaType === 'video' ? (
-                      <video src={post.mediaUrl} controls className="mt-5 max-h-[28rem] w-full rounded-[2rem] bg-black/30" />
+                      <CommunityVideoPlayer
+                        src={post.mediaUrl}
+                        className="mt-5 max-h-[28rem] w-full"
+                      />
                     ) : (
                       <img src={post.mediaUrl} alt={post.content || post.username} className="mt-5 w-full rounded-[2rem] object-cover" />
                     )
@@ -416,6 +429,7 @@ export default function Social() {
                   }`}
                 >
                   {tab.label}
+                  {typeof tab.count === 'number' && tab.count > 0 ? ` (${tab.count})` : ''}
                 </button>
               ))}
             </div>
@@ -497,10 +511,11 @@ export default function Social() {
                     <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">@{request.fromUserId?.username}</p>
                     <button
                       onClick={() => void handleAcceptRequest(request._id)}
-                      className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white"
+                      disabled={acceptingRequestId === request._id}
+                      className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
                     >
                       <UserPlus size={14} />
-                      Accept
+                      {acceptingRequestId === request._id ? 'Accepting...' : 'Accept'}
                     </button>
                   </div>
                 ))}
@@ -527,9 +542,9 @@ export default function Social() {
       </section>
 
       {selectedGamer && (
-        <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#0f0b21]/90 p-3 sm:p-6 backdrop-blur-md">
+        <div className="fixed inset-0 z-[100] bg-[#0f0b21]/90 p-3 sm:p-6 backdrop-blur-md">
           <div className="flex min-h-full items-center justify-center">
-            <div className="w-full max-w-2xl rounded-[2rem] border border-white/10 bg-[#1a1635] p-5 sm:rounded-[3rem] sm:p-8">
+            <div className="max-h-[calc(100vh-1.5rem)] w-full max-w-2xl overflow-y-auto rounded-[2rem] border border-white/10 bg-[#1a1635] p-5 sm:max-h-[calc(100vh-3rem)] sm:rounded-[3rem] sm:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Player Actions</p>
@@ -560,9 +575,10 @@ export default function Social() {
                 ) : (
                   <button
                     onClick={() => void handleSendRequest(selectedGamer.id)}
-                    className="rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white"
+                    disabled={sendingRequestUserId === selectedGamer.id}
+                    className="rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
                   >
-                    Send Request
+                    {sendingRequestUserId === selectedGamer.id ? 'Sending...' : 'Send Request'}
                   </button>
                 )}
               </div>

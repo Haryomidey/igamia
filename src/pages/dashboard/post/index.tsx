@@ -3,6 +3,7 @@ import { Heart, MessageCircle, MoveLeft } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { useSocial } from '../../../hooks/useSocial';
 import { useToast } from '../../../components/ToastProvider';
+import { CommunityVideoPlayer } from '../../../components/CommunityVideoPlayer';
 
 export default function PostPage() {
   const { postId } = useParams();
@@ -146,7 +147,10 @@ export default function PostPage() {
 
             {post.mediaUrl ? (
               post.mediaType === 'video' ? (
-                <video src={post.mediaUrl} controls className="mt-5 max-h-[32rem] w-full rounded-[2rem] bg-black/30" />
+                <CommunityVideoPlayer
+                  src={post.mediaUrl}
+                  className="mt-5 max-h-[32rem] w-full"
+                />
               ) : (
                 <img
                   src={post.mediaUrl}
