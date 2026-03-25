@@ -84,7 +84,20 @@ export class MediaService {
 
     try {
       const { cloudName, apiKey, apiSecret } = this.getCloudinaryConfig();
-      const signaturePayload = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
+      const signatureParams: Record<string, string | number> = {
+        folder,
+        timestamp,
+      };
+
+      if (input.fileName?.trim()) {
+        signatureParams.filename_override = input.fileName.trim();
+      }
+
+      const signaturePayload = Object.entries(signatureParams)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, value]) => `${key}=${value}`)
+        .join('&')
+        .concat(apiSecret);
       const signature = createHash('sha1').update(signaturePayload).digest('hex');
 
       const formData = new FormData();

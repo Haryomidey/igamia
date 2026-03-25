@@ -8,6 +8,7 @@ import {
 } from './schemas/connection-request.schema';
 import { SocialPost, SocialPostDocument } from './schemas/social-post.schema';
 import { DirectMessage, DirectMessageDocument } from './schemas/direct-message.schema';
+import { SocialComment, SocialCommentDocument } from './schemas/social-comment.schema';
 
 export type FeedPost = {
   _id: unknown;
@@ -21,6 +22,19 @@ export type FeedPost = {
   likedByUserIds: Types.ObjectId[];
   likedByMe: boolean;
   likesCount: number;
+  commentsCount: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+export type PostComment = {
+  _id: unknown;
+  postId: unknown;
+  userId: unknown;
+  username: string;
+  userFullName: string;
+  avatarUrl: string;
+  message: string;
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -40,6 +54,8 @@ export class SocialService {
     private readonly connectionRequestModel: Model<ConnectionRequestDocument>,
     @InjectModel(SocialPost.name)
     private readonly socialPostModel: Model<SocialPostDocument>,
+    @InjectModel(SocialComment.name)
+    private readonly socialCommentModel: Model<SocialCommentDocument>,
     @InjectModel(DirectMessage.name)
     private readonly directMessageModel: Model<DirectMessageDocument>,
     private readonly usersService: UsersService,
@@ -47,6 +63,32 @@ export class SocialService {
 
   private objectId(id: string) {
     return new Types.ObjectId(id);
+  }
+
+  private serializePost(
+    post: Pick<
+      SocialPost,
+      'userId' | 'username' | 'userFullName' | 'avatarUrl' | 'content' | 'mediaUrl' | 'mediaType' | 'likedByUserIds' | 'commentsCount'
+    > & { _id: unknown; createdAt?: Date; updatedAt?: Date },
+    userId: string,
+  ): FeedPost {
+    return {
+      ...post,
+      likedByMe: post.likedByUserIds.some((likedUserId) => likedUserId.toString() === userId),
+      likesCount: post.likedByUserIds.length,
+      commentsCount: post.commentsCount ?? 0,
+    };
+  }
+
+  private serializeComment(
+    comment: Pick<
+      SocialComment,
+      'postId' | 'userId' | 'username' | 'userFullName' | 'avatarUrl' | 'message'
+    > & { _id: unknown; createdAt?: Date; updatedAt?: Date },
+  ): PostComment {
+    return {
+      ...comment,
+    };
   }
 
   async getConnectedUserIds(userId: string) {
@@ -214,17 +256,13 @@ export class SocialService {
 
   async listFeed(userId: string): Promise<FeedPost[]> {
     const posts = await this.socialPostModel.find().sort({ createdAt: -1 }).limit(40).lean();
-    return posts.map((post) => ({
-      ...post,
-      likedByMe: post.likedByUserIds.some((likedUserId) => likedUserId.toString() === userId),
-      likesCount: post.likedByUserIds.length,
-    }));
+    return posts.map((post) => this.serializePost(post, userId));
   }
 
   async createPost(
     userId: string,
     payload: { content?: string; mediaUrl?: string; mediaType?: 'text' | 'image' | 'video' },
-  ) {
+  ): Promise<FeedPost> {
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
@@ -234,7 +272,7 @@ export class SocialService {
       throw new BadRequestException('Post content or media is required');
     }
 
-    return this.socialPostModel.create({
+    const created = await this.socialPostModel.create({
       userId: new Types.ObjectId(userId),
       username: user.username,
       userFullName: user.fullName,
@@ -243,7 +281,10 @@ export class SocialService {
       mediaUrl: payload.mediaUrl?.trim() || '',
       mediaType: payload.mediaType ?? (payload.mediaUrl ? 'image' : 'text'),
       likedByUserIds: [],
+      commentsCount: 0,
     });
+
+    return this.serializePost(created.toObject(), userId);
   }
 
   async togglePostLike(postId: string, userId: string) {
@@ -265,7 +306,54 @@ export class SocialService {
       postId: post.id,
       likesCount: post.likedByUserIds.length,
       likedByMe: !alreadyLiked,
+      likedUserId: userId,
     };
+  }
+
+  async listPostComments(postId: string): Promise<PostComment[]> {
+    const post = await this.socialPostModel.findById(postId).lean();
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const comments = await this.socialCommentModel
+      .find({ postId: this.objectId(postId) })
+      .sort({ createdAt: 1 })
+      .limit(100)
+      .lean();
+
+    return comments.map((comment) => this.serializeComment(comment));
+  }
+
+  async commentOnPost(postId: string, userId: string, message: string): Promise<PostComment> {
+    const post = await this.socialPostModel.findById(postId);
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      throw new BadRequestException('Comment is required');
+    }
+
+    const comment = await this.socialCommentModel.create({
+      postId: post._id,
+      userId: this.objectId(userId),
+      username: user.username,
+      userFullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      message: trimmedMessage,
+    });
+
+    post.commentsCount = (post.commentsCount ?? 0) + 1;
+    await post.save();
+
+    return this.serializeComment(comment.toObject());
   }
 
   async getFollowerIds(userId: string) {

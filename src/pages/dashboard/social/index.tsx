@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Gift,
   Heart,
@@ -7,7 +7,6 @@ import {
   RefreshCcw,
   Search,
   UserPlus,
-  Users,
   Video,
   X,
 } from 'lucide-react';
@@ -23,6 +22,7 @@ type PendingMedia = {
   secureUrl: string;
   mediaType: 'image' | 'video';
   previewName: string;
+  previewUrl: string;
 };
 
 export default function Social() {
@@ -35,6 +35,7 @@ export default function Social() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingMedia, setIsUploadingMedia] = useState(false);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
+  const pendingPreviewUrlRef = useRef<string | null>(null);
   const toast = useToast();
 
   const {
@@ -83,6 +84,28 @@ export default function Social() {
     void fetchMessages(selectedGamer.id);
   }, [selectedGamer?.connected, selectedGamer?.id]);
 
+  useEffect(() => {
+    pendingPreviewUrlRef.current = pendingMedia?.previewUrl ?? null;
+  }, [pendingMedia?.previewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingPreviewUrlRef.current) {
+        URL.revokeObjectURL(pendingPreviewUrlRef.current);
+      }
+    };
+  }, []);
+
+  const clearPendingMedia = () => {
+    setPendingMedia((current) => {
+      if (current?.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+
+      return null;
+    });
+  };
+
   const handleCreatePost = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -94,7 +117,7 @@ export default function Social() {
         mediaType: pendingMedia?.mediaType ?? 'text',
       });
       setPostText('');
-      setPendingMedia(null);
+      clearPendingMedia();
       toast.success('Post shared to the community feed.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? err?.message ?? 'Unable to create post.');
@@ -112,6 +135,15 @@ export default function Social() {
       return;
     }
 
+    const previewUrl = URL.createObjectURL(file);
+    clearPendingMedia();
+    setPendingMedia({
+      secureUrl: '',
+      mediaType,
+      previewName: file.name,
+      previewUrl,
+    });
+
     try {
       setIsUploadingMedia(true);
       const uploaded = await uploadMedia({
@@ -119,14 +151,20 @@ export default function Social() {
         purpose: 'post',
         resourceType: mediaType,
       });
-      setPendingMedia({
-        secureUrl: uploaded.secureUrl,
-        mediaType,
-        previewName: file.name,
+      setPendingMedia((current) => {
+        if (!current || current.previewUrl !== previewUrl) {
+          return current;
+        }
+
+        return {
+          ...current,
+          secureUrl: uploaded.secureUrl,
+        };
       });
       event.target.value = '';
       toast.success(`${mediaType === 'image' ? 'Image' : 'Video'} attached. Press Post to publish.`);
     } catch (err: any) {
+      clearPendingMedia();
       toast.error(err?.response?.data?.message ?? 'Unable to upload post media.');
     } finally {
       setIsUploadingMedia(false);
@@ -197,13 +235,13 @@ export default function Social() {
   const showFeed = activeTab === 'feed';
 
   return (
-    <div className="space-y-8 pb-12">
-      <header className="rounded-[3rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(157,124,240,0.16),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6 md:p-8">
+    <div className="space-y-6 pb-12 sm:space-y-8">
+      <header className="rounded-[2rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(157,124,240,0.16),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5 sm:rounded-[2.5rem] sm:p-6 md:p-8">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl space-y-3">
             <span className="text-[10px] font-black uppercase tracking-[0.4em] text-brand-accent">Community Feed</span>
-            <h1 className="text-4xl font-black uppercase italic tracking-tighter text-white md:text-5xl">Social Hub</h1>
-            <p className="text-sm leading-relaxed text-zinc-400">
+            <h1 className="text-3xl font-black uppercase italic tracking-tight text-white sm:text-4xl md:text-5xl">Social Hub</h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-zinc-400 sm:text-[15px]">
               Discover is your suggestion list and now shows connected people first. Requests are pending connection
               invites sent to you. Friends are accepted connections, and only friends can gift or DM.
             </p>
@@ -225,13 +263,13 @@ export default function Social() {
         </div>
       </header>
 
-      <div className="sticky top-3 z-20 rounded-[2rem] border border-white/10 bg-[#16122d]/90 p-3 backdrop-blur-xl lg:hidden">
+      <div className="sticky top-3 z-20 rounded-[1.6rem] border border-white/10 bg-[#16122d]/90 p-2.5 backdrop-blur-xl lg:hidden">
         <div className="grid grid-cols-4 gap-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-[1.2rem] px-2 py-3 text-[10px] font-black uppercase tracking-[0.18em] transition-all ${
+              className={`rounded-[1rem] px-1.5 py-3 text-[9px] font-black uppercase tracking-[0.14em] transition-all sm:text-[10px] ${
                 activeTab === tab.id ? 'bg-brand-primary text-white' : 'text-zinc-500'
               }`}
             >
@@ -243,11 +281,11 @@ export default function Social() {
 
       <section className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_360px]">
         <div className="space-y-6">
-          <form onSubmit={handleCreatePost} className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
-            <div className="flex items-center justify-between gap-4">
+          <form onSubmit={handleCreatePost} className="rounded-[2rem] border border-white/10 bg-white/5 p-5 sm:rounded-[2.5rem] sm:p-6">
+            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Create Post</p>
-                <h2 className="mt-2 text-xl font-black uppercase italic text-white">Share with the feed</h2>
+                <h2 className="mt-2 text-lg font-black uppercase italic text-white sm:text-xl">Share with the feed</h2>
               </div>
               <div className="hidden rounded-full border border-white/10 bg-black/20 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 md:block">
                 Feed First
@@ -258,23 +296,41 @@ export default function Social() {
               value={postText}
               onChange={(event) => setPostText(event.target.value)}
               placeholder="Drop a challenge update, stream highlight, or callout..."
-              className="mt-5 min-h-32 w-full rounded-[1.75rem] border border-white/10 bg-black/20 px-5 py-4 text-sm text-white outline-none placeholder:text-zinc-600"
+              className="mt-5 min-h-32 w-full rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-4 text-sm leading-relaxed text-white outline-none placeholder:text-zinc-600 sm:rounded-[1.75rem] sm:px-5"
             />
 
             {pendingMedia && (
-              <div className="mt-4 flex items-center justify-between gap-4 rounded-[1.75rem] border border-white/10 bg-black/20 px-4 py-4">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Attached Draft Media</p>
-                  <p className="mt-1 text-sm text-white">{pendingMedia.previewName}</p>
-                  <p className="mt-1 text-xs text-zinc-500">This will post only when you click Post Now.</p>
+              <div className="mt-4 space-y-4 rounded-[1.5rem] border border-white/10 bg-black/20 p-4 sm:rounded-[1.75rem]">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Attached Draft Media</p>
+                    <p className="mt-1 break-all text-sm text-white">{pendingMedia.previewName}</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {isUploadingMedia ? 'Uploading media...' : 'This will post only when you click Post Now.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearPendingMedia}
+                    className="shrink-0 rounded-full border border-white/10 bg-white/5 p-3 text-zinc-400"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setPendingMedia(null)}
-                  className="rounded-full border border-white/10 bg-white/5 p-3 text-zinc-400"
-                >
-                  <X size={16} />
-                </button>
+
+                {pendingMedia.mediaType === 'video' ? (
+                  <video
+                    src={pendingMedia.previewUrl}
+                    controls
+                    className="max-h-[22rem] w-full rounded-[1.25rem] bg-black/40 object-cover"
+                  />
+                ) : (
+                  <img
+                    src={pendingMedia.previewUrl}
+                    alt={pendingMedia.previewName}
+                    className="max-h-[22rem] w-full rounded-[1.25rem] object-cover"
+                  />
+                )}
               </div>
             )}
 
@@ -291,7 +347,7 @@ export default function Social() {
               </label>
               <button
                 type="submit"
-                disabled={isSubmitting || isUploadingMedia || (!postText.trim() && !pendingMedia)}
+                disabled={isSubmitting || isUploadingMedia || (!postText.trim() && !pendingMedia?.secureUrl)}
                 className="rounded-full bg-brand-primary px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
               >
                 {isSubmitting ? 'Posting...' : 'Post Now'}
@@ -299,16 +355,16 @@ export default function Social() {
             </div>
           </form>
 
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
             {[
               { label: 'Feed Posts', value: feed.length },
               { label: 'Friends', value: friends.length },
               { label: 'Discover', value: discoverUsers.length },
               { label: 'Requests', value: requests.length },
             ].map((item) => (
-              <div key={item.label} className="rounded-[2rem] border border-white/10 bg-white/5 p-5">
+              <div key={item.label} className="rounded-[1.5rem] border border-white/10 bg-white/5 p-4 sm:rounded-[2rem] sm:p-5">
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{item.label}</p>
-                <p className="mt-3 text-3xl font-black italic text-white">{item.value}</p>
+                <p className="mt-3 text-2xl font-black italic text-white sm:text-3xl">{item.value}</p>
               </div>
             ))}
           </div>
@@ -320,7 +376,7 @@ export default function Social() {
                   key={post._id}
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6"
+                  className="rounded-[2rem] border border-white/10 bg-white/5 p-5 sm:rounded-[2.5rem] sm:p-6"
                 >
                   <div className="flex items-center gap-4">
                     <img
@@ -329,13 +385,13 @@ export default function Social() {
                       className="h-12 w-12 rounded-full border border-white/10 object-cover"
                     />
                     <div>
-                      <p className="font-black text-white">{post.userFullName || post.username}</p>
-                      <p className="text-[10px] uppercase tracking-widest text-zinc-500">
+                      <p className="break-words font-black text-white">{post.userFullName || post.username}</p>
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
                         @{post.username} • {post.createdAt ? new Date(post.createdAt).toLocaleString() : 'Now'}
                       </p>
                     </div>
                   </div>
-                  {post.content ? <p className="mt-5 text-sm leading-relaxed text-zinc-200">{post.content}</p> : null}
+                  {post.content ? <p className="mt-5 break-words text-sm leading-relaxed text-zinc-200 sm:text-[15px]">{post.content}</p> : null}
                   {post.mediaUrl ? (
                     post.mediaType === 'video' ? (
                       <video src={post.mediaUrl} controls className="mt-5 max-h-[28rem] w-full rounded-[2rem] bg-black/30" />
@@ -383,12 +439,12 @@ export default function Social() {
           </div>
 
           {(activeTab === 'discover' || activeTab === 'friends') && (
-            <div className="space-y-4 rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
+            <div className="space-y-4 rounded-[2rem] border border-white/10 bg-white/5 p-5 sm:rounded-[2.5rem] sm:p-6">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
                   {activeTab === 'friends' ? 'Connected Users' : 'Discover Players'}
                 </p>
-                <h3 className="mt-3 text-xl font-black uppercase italic text-white">
+                <h3 className="mt-3 text-lg font-black uppercase italic text-white sm:text-xl">
                   {activeTab === 'friends' ? 'Your friends list' : 'Suggestions and connections'}
                 </h3>
               </div>
@@ -409,7 +465,7 @@ export default function Social() {
                   <button
                     key={gamer.id}
                     onClick={() => setSelectedGamer(gamer)}
-                    className="flex w-full items-center gap-4 rounded-[1.75rem] border border-white/10 bg-black/20 p-4 text-left transition-all hover:bg-white/5"
+                    className="flex w-full items-center gap-4 rounded-[1.5rem] border border-white/10 bg-black/20 p-4 text-left transition-all hover:bg-white/5 sm:rounded-[1.75rem]"
                   >
                     <img
                       src={gamer.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${gamer.username}`}
@@ -417,8 +473,9 @@ export default function Social() {
                       className="h-14 w-14 rounded-full object-cover"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-black text-white">{gamer.fullName || gamer.username}</p>
+                      <p className="break-words font-black text-white">{gamer.fullName || gamer.username}</p>
                       <p className="text-[10px] uppercase tracking-widest text-zinc-500">@{gamer.username}</p>
+                      {gamer.bio ? <p className="mt-2 line-clamp-2 break-words text-xs leading-relaxed text-zinc-400">{gamer.bio}</p> : null}
                       <div className="mt-2 flex flex-wrap gap-2">
                         {gamer.connected && (
                           <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-300">
@@ -444,16 +501,16 @@ export default function Social() {
           )}
 
           {activeTab === 'requests' && (
-            <div className="space-y-4 rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
+            <div className="space-y-4 rounded-[2rem] border border-white/10 bg-white/5 p-5 sm:rounded-[2.5rem] sm:p-6">
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Pending Requests</p>
-                <h3 className="mt-3 text-xl font-black uppercase italic text-white">Connection invites</h3>
+                <h3 className="mt-3 text-lg font-black uppercase italic text-white sm:text-xl">Connection invites</h3>
               </div>
 
               <div className="space-y-3">
                 {requests.map((request) => (
                   <div key={request._id} className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
-                    <p className="font-black text-white">{request.fromUserId?.fullName ?? request.fromUserId?.username}</p>
+                    <p className="break-words font-black text-white">{request.fromUserId?.fullName ?? request.fromUserId?.username}</p>
                     <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">@{request.fromUserId?.username}</p>
                     <button
                       onClick={() => void handleAcceptRequest(request._id)}
@@ -474,7 +531,7 @@ export default function Social() {
           )}
 
           {activeTab === 'feed' && (
-            <div className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
+            <div className="rounded-[2rem] border border-white/10 bg-white/5 p-5 sm:rounded-[2.5rem] sm:p-6">
               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">How It Works</p>
               <div className="mt-4 space-y-3 text-sm leading-relaxed text-zinc-400">
                 <p><span className="font-black text-white">Discover:</span> suggestions from the social discovery endpoint, now ordered with connected users first.</p>
@@ -487,16 +544,16 @@ export default function Social() {
       </section>
 
       {selectedGamer && (
-        <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#0f0b21]/90 p-6 backdrop-blur-md">
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-[#0f0b21]/90 p-3 sm:p-6 backdrop-blur-md">
           <div className="flex min-h-full items-center justify-center">
-            <div className="w-full max-w-2xl rounded-[3rem] border border-white/10 bg-[#1a1635] p-8">
+            <div className="w-full max-w-2xl rounded-[2rem] border border-white/10 bg-[#1a1635] p-5 sm:rounded-[3rem] sm:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Player Actions</p>
-                  <h3 className="mt-3 text-2xl font-black uppercase italic text-white">
+                  <h3 className="mt-3 break-words text-xl font-black uppercase italic text-white sm:text-2xl">
                     {selectedGamer.fullName || selectedGamer.username}
                   </h3>
-                  <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+                  <p className="mt-3 break-words text-sm leading-relaxed text-zinc-400 sm:text-[15px]">
                     {selectedGamer.bio || 'Ready to connect on iGamia.'}
                   </p>
                 </div>
@@ -555,7 +612,7 @@ export default function Social() {
                       {messages.map((message) => (
                         <div
                           key={message._id}
-                          className={`rounded-2xl px-4 py-3 text-sm ${
+                          className={`break-words rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                             message.toUserId === selectedGamer.id
                               ? 'ml-10 bg-brand-primary/20 text-white'
                               : 'mr-10 bg-white/10 text-zinc-200'

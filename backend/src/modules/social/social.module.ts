@@ -13,6 +13,7 @@ import { SocialGateway } from './social.gateway';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { WsJwtGuard } from '../../common/guards/ws-jwt.guard';
+import { SocialComment, SocialCommentSchema } from './schemas/social-comment.schema';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { WsJwtGuard } from '../../common/guards/ws-jwt.guard';
     MongooseModule.forFeature([
       { name: ConnectionRequest.name, schema: ConnectionRequestSchema },
       { name: SocialPost.name, schema: SocialPostSchema },
+      { name: SocialComment.name, schema: SocialCommentSchema },
       { name: DirectMessage.name, schema: DirectMessageSchema },
     ]),
     UsersModule,

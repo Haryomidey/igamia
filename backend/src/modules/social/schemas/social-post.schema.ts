@@ -29,6 +29,9 @@ export class SocialPost {
 
   @Prop({ type: [Types.ObjectId], default: [] })
   likedByUserIds!: Types.ObjectId[];
+
+  @Prop({ default: 0 })
+  commentsCount!: number;
 }
 
 export const SocialPostSchema = SchemaFactory.createForClass(SocialPost);
