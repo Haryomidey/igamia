@@ -15,6 +15,46 @@ export class WalletService {
     private readonly configService: ConfigService,
   ) {}
 
+  private getIgcToNgnRate() {
+    return Number(this.configService.get('IGC_TO_NGN_RATE', '10'));
+  }
+
+  private getPlatformFeeRate() {
+    return Number(this.configService.get('PLATFORM_FEE_RATE', '0.1'));
+  }
+
+  private roundAmount(value: number) {
+    return Number(value.toFixed(2));
+  }
+
+  private async ensureWallet(userId: string) {
+    let wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) });
+    if (!wallet) {
+      await this.bootstrapWallet(userId);
+      wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) });
+    }
+
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
+    }
+
+    return wallet;
+  }
+
+  private buildWalletSummary(wallet: { usdBalance: number; igcBalance: number }) {
+    const igcToNgnRate = this.getIgcToNgnRate();
+    const totalPortfolioNgn = this.roundAmount(wallet.usdBalance + wallet.igcBalance * igcToNgnRate);
+
+    return {
+      fiatCurrency: 'NGN' as const,
+      fiatBalance: wallet.usdBalance,
+      igcToNgnRate,
+      platformFeeRate: this.getPlatformFeeRate(),
+      igcEstimatedValueNgn: this.roundAmount(wallet.igcBalance * igcToNgnRate),
+      totalPortfolioNgn,
+    };
+  }
+
   async bootstrapWallet(userId: string) {
     const existing = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) });
     if (existing) {
@@ -48,7 +88,7 @@ export class WalletService {
       .limit(20)
       .lean();
 
-    return { wallet, transactions };
+    return { wallet, transactions, summary: this.buildWalletSummary(wallet) };
   }
 
   async creditIgc(userId: string, amount: number, description: string, metadata: Record<string, unknown> = {}) {
@@ -90,7 +130,7 @@ export class WalletService {
       userId: new Types.ObjectId(userId),
       type: 'debit',
       amount,
-      currency: 'USD',
+      currency: 'NGN',
       description,
       metadata,
     });
@@ -104,15 +144,7 @@ export class WalletService {
     description: string,
     metadata: Record<string, unknown> = {},
   ) {
-    let wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) });
-    if (!wallet) {
-      await this.bootstrapWallet(userId);
-      wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) });
-    }
-
-    if (!wallet) {
-      throw new NotFoundException('Wallet not found');
-    }
+    const wallet = await this.ensureWallet(userId);
 
     wallet.usdBalance += amount;
     await wallet.save();
@@ -121,7 +153,7 @@ export class WalletService {
       userId: new Types.ObjectId(userId),
       type: 'deposit',
       amount,
-      currency: 'USD',
+      currency: 'NGN',
       description,
       metadata,
     });
@@ -146,10 +178,7 @@ export class WalletService {
   }
 
   async withdraw(userId: string, dto: WithdrawDto) {
-    const wallet = await this.walletModel.findOne({ userId: new Types.ObjectId(userId) });
-    if (!wallet) {
-      throw new NotFoundException('Wallet not found');
-    }
+    const wallet = await this.ensureWallet(userId);
 
     if (wallet.usdBalance < dto.amount) {
       throw new BadRequestException('Insufficient balance');
@@ -162,15 +191,100 @@ export class WalletService {
       userId: new Types.ObjectId(userId),
       type: 'withdrawal',
       amount: dto.amount,
-      currency: 'USD',
+      currency: 'NGN',
       status: 'pending',
-      description: 'Withdrawal request submitted',
+      description: 'NGN withdrawal request submitted',
     });
 
     return {
       message: 'Withdrawal request submitted successfully',
       transaction,
       wallet,
+      summary: this.buildWalletSummary(wallet),
+    };
+  }
+
+  async buyIgc(userId: string, amountNgn: number) {
+    const wallet = await this.ensureWallet(userId);
+    if (wallet.usdBalance < amountNgn) {
+      throw new BadRequestException('Insufficient NGN balance');
+    }
+
+    const rate = this.getIgcToNgnRate();
+    const creditedIgc = this.roundAmount(amountNgn / rate);
+
+    wallet.usdBalance = this.roundAmount(wallet.usdBalance - amountNgn);
+    wallet.igcBalance = this.roundAmount(wallet.igcBalance + creditedIgc);
+    await wallet.save();
+
+    await this.transactionModel.insertMany([
+      {
+        userId: new Types.ObjectId(userId),
+        type: 'igc_purchase',
+        amount: amountNgn,
+        currency: 'NGN',
+        description: 'NGN converted to IGC',
+        metadata: { igcToNgnRate: rate, creditedIgc },
+      },
+      {
+        userId: new Types.ObjectId(userId),
+        type: 'igc_purchase_credit',
+        amount: creditedIgc,
+        currency: 'IGC',
+        description: 'IGC purchased from wallet balance',
+        metadata: { igcToNgnRate: rate, debitedNgn: amountNgn },
+      },
+    ]);
+
+    return {
+      message: 'IGC purchased successfully',
+      creditedIgc,
+      debitedNgn: amountNgn,
+      rate,
+      wallet,
+      summary: this.buildWalletSummary(wallet),
+    };
+  }
+
+  async convertIgcToNgn(userId: string, amountIgc: number) {
+    const wallet = await this.ensureWallet(userId);
+    if (wallet.igcBalance < amountIgc) {
+      throw new BadRequestException('Insufficient IGC balance');
+    }
+
+    const rate = this.getIgcToNgnRate();
+    const creditedNgn = this.roundAmount(amountIgc * rate);
+
+    wallet.igcBalance = this.roundAmount(wallet.igcBalance - amountIgc);
+    wallet.usdBalance = this.roundAmount(wallet.usdBalance + creditedNgn);
+    await wallet.save();
+
+    await this.transactionModel.insertMany([
+      {
+        userId: new Types.ObjectId(userId),
+        type: 'igc_conversion_debit',
+        amount: amountIgc,
+        currency: 'IGC',
+        description: 'IGC converted to NGN',
+        metadata: { igcToNgnRate: rate, creditedNgn },
+      },
+      {
+        userId: new Types.ObjectId(userId),
+        type: 'igc_conversion_credit',
+        amount: creditedNgn,
+        currency: 'NGN',
+        description: 'NGN credited from IGC conversion',
+        metadata: { igcToNgnRate: rate, debitedIgc: amountIgc },
+      },
+    ]);
+
+    return {
+      message: 'IGC converted successfully',
+      debitedIgc: amountIgc,
+      creditedNgn,
+      rate,
+      wallet,
+      summary: this.buildWalletSummary(wallet),
     };
   }
 
@@ -179,23 +293,21 @@ export class WalletService {
       throw new BadRequestException('You cannot gift yourself');
     }
 
-    const feeRate = Number(this.configService.get('PLATFORM_FEE_RATE', '0.1'));
-    const fee = Number((dto.amount * feeRate).toFixed(2));
-    const receiverAmount = Number((dto.amount - fee).toFixed(2));
+    const feeRate = this.getPlatformFeeRate();
+    const rate = this.getIgcToNgnRate();
+    const feeIgc = this.roundAmount(dto.amount * feeRate);
+    const receiverIgc = this.roundAmount(dto.amount - feeIgc);
+    const creditedNgn = this.roundAmount(receiverIgc * rate);
 
-    const senderWallet = await this.walletModel.findOne({ userId: new Types.ObjectId(senderUserId) });
-    const receiverWallet = await this.walletModel.findOne({ userId: new Types.ObjectId(dto.receiverUserId) });
+    const senderWallet = await this.ensureWallet(senderUserId);
+    const receiverWallet = await this.ensureWallet(dto.receiverUserId);
 
-    if (!senderWallet || !receiverWallet) {
-      throw new NotFoundException('Wallet not found');
+    if (senderWallet.igcBalance < dto.amount) {
+      throw new BadRequestException('Insufficient IGC balance');
     }
 
-    if (senderWallet.usdBalance < dto.amount) {
-      throw new BadRequestException('Insufficient balance');
-    }
-
-    senderWallet.usdBalance -= dto.amount;
-    receiverWallet.usdBalance += receiverAmount;
+    senderWallet.igcBalance = this.roundAmount(senderWallet.igcBalance - dto.amount);
+    receiverWallet.usdBalance = this.roundAmount(receiverWallet.usdBalance + creditedNgn);
     await Promise.all([senderWallet.save(), receiverWallet.save()]);
 
     await this.transactionModel.insertMany([
@@ -203,24 +315,40 @@ export class WalletService {
         userId: new Types.ObjectId(senderUserId),
         type: 'gift_sent',
         amount: dto.amount,
-        currency: 'USD',
+        currency: 'IGC',
         description: dto.description,
-        metadata: { receiverUserId: dto.receiverUserId, fee },
+        metadata: {
+          receiverUserId: dto.receiverUserId,
+          feeIgc,
+          creditedNgn,
+          igcToNgnRate: rate,
+          platformFeeRate: feeRate,
+        },
       },
       {
         userId: new Types.ObjectId(dto.receiverUserId),
         type: 'gift_received',
-        amount: receiverAmount,
-        currency: 'USD',
+        amount: creditedNgn,
+        currency: 'NGN',
         description: dto.description,
-        metadata: { senderUserId, fee },
+        metadata: {
+          senderUserId,
+          sourceIgcAmount: dto.amount,
+          receivedIgcAfterFee: receiverIgc,
+          feeIgc,
+          igcToNgnRate: rate,
+          platformFeeRate: feeRate,
+        },
       },
     ]);
 
     return {
       message: 'Gift sent successfully',
-      fee,
-      creditedAmount: receiverAmount,
+      feeIgc,
+      feeNgn: this.roundAmount(feeIgc * rate),
+      creditedIgc: receiverIgc,
+      creditedNgn,
+      rate,
     };
   }
 }

@@ -222,7 +222,18 @@ export class MediaService {
       return { deleted: false };
     }
 
-    const { cloudName, apiKey, apiSecret } = this.getCloudinaryConfig();
+    let cloudName: string;
+    let apiKey: string;
+    let apiSecret: string;
+    try {
+      ({ cloudName, apiKey, apiSecret } = this.getCloudinaryConfig());
+    } catch (error) {
+      if (error instanceof InternalServerErrorException) {
+        return { deleted: false };
+      }
+      throw error;
+    }
+
     const timestamp = Math.floor(Date.now() / 1000);
     const signature = createHash('sha1')
       .update(`public_id=${publicId}&timestamp=${timestamp}${apiSecret}`)
@@ -243,8 +254,24 @@ export class MediaService {
       },
     );
 
+    const payload = (await response.json().catch(() => ({}))) as {
+      result?: string;
+      error?: { message?: string };
+    };
+    const normalizedResult = payload.result?.toLowerCase();
+    const normalizedError = payload.error?.message?.toLowerCase();
+
+    if (
+      normalizedResult === 'ok' ||
+      normalizedResult === 'not found' ||
+      normalizedResult === 'already deleted' ||
+      normalizedError?.includes('not found')
+    ) {
+      return { deleted: true };
+    }
+
     if (!response.ok) {
-      throw new InternalServerErrorException('Unable to delete media');
+      throw new InternalServerErrorException(payload.error?.message ?? 'Unable to delete media');
     }
 
     return { deleted: true };

@@ -13,11 +13,19 @@ import { useWallet, type WalletSnapshot } from '../../../hooks/useWallet';
 import { useToast } from '../../../components/ToastProvider';
 import { useAuth } from '../../../hooks/useAuth';
 
-const inflowTypes = new Set(['mining_reward', 'gift_received', 'referral_reward', 'winning', 'deposit']);
+const inflowTypes = new Set([
+  'mining_reward',
+  'gift_received',
+  'referral_reward',
+  'winning',
+  'deposit',
+  'igc_purchase_credit',
+  'igc_conversion_credit',
+]);
 
-function formatCurrency(amount: number, currency: 'USD' | 'IGC') {
-  if (currency === 'USD') {
-    return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatCurrency(amount: number, currency: 'USD' | 'NGN' | 'IGC') {
+  if (currency === 'USD' || currency === 'NGN') {
+    return `${currency} ${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
   return `${amount.toLocaleString()} IGC`;
@@ -26,12 +34,16 @@ function formatCurrency(amount: number, currency: 'USD' | 'IGC') {
 export default function Wallet() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
-  const { walletData, loading, error, withdraw, fetchWallet, initializePayment, verifyPayment } = useWallet(true);
+  const { walletData, loading, error, withdraw, fetchWallet, initializePayment, verifyPayment, convertIgc, buyIgc } = useWallet(true);
   const toast = useToast();
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [isBuyIgcOpen, setIsBuyIgcOpen] = useState(false);
+  const [isConvertIgcOpen, setIsConvertIgcOpen] = useState(false);
   const [depositAmount, setDepositAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [buyIgcAmount, setBuyIgcAmount] = useState('');
+  const [convertIgcAmount, setConvertIgcAmount] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isVerifyingDeposit, setIsVerifyingDeposit] = useState(false);
 
@@ -164,6 +176,50 @@ export default function Wallet() {
     }
   };
 
+  const handleBuyIgc = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const amount = Number(buyIgcAmount);
+    if (!amount || amount <= 0) {
+      toast.warning('Enter a valid NGN amount.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await buyIgc(amount);
+      setIsBuyIgcOpen(false);
+      setBuyIgcAmount('');
+      toast.success('IGC purchased from your NGN wallet.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to buy IGC.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConvertIgc = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const amount = Number(convertIgcAmount);
+    if (!amount || amount <= 0) {
+      toast.warning('Enter a valid IGC amount.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await convertIgc(amount);
+      setIsConvertIgcOpen(false);
+      setConvertIgcAmount('');
+      toast.success('IGC converted to NGN successfully.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to convert IGC.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-12 pb-12">
       <header className="flex items-center justify-between gap-4">
@@ -195,14 +251,14 @@ export default function Wallet() {
                 </div>
                 <div>
                   <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">Available Funds</p>
-                  <p className="text-[8px] font-bold text-white/60 uppercase tracking-widest">Withdrawable USD balance</p>
+                  <p className="text-[8px] font-bold text-white/60 uppercase tracking-widest">Withdrawable NGN balance</p>
                 </div>
               </div>
               <span className="bg-white/20 text-white text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Withdrawable</span>
             </div>
 
             <p className="text-6xl font-black text-white italic">
-              {loading && !walletData ? '...' : formatCurrency(walletData?.wallet.usdBalance ?? 0, 'USD')}
+              {loading && !walletData ? '...' : formatCurrency(walletData?.summary.fiatBalance ?? walletData?.wallet.usdBalance ?? 0, 'NGN')}
             </p>
 
             <div className="flex gap-4">
@@ -232,27 +288,44 @@ export default function Wallet() {
                 </div>
                 <div>
                   <p className="text-[10px] font-black text-[#856404] uppercase tracking-widest">iGamia Coins Balance</p>
-                  <p className="text-[8px] font-bold text-[#856404]/60 uppercase tracking-widest">Earned through platform activity</p>
+                  <p className="text-[8px] font-bold text-[#856404]/60 uppercase tracking-widest">Use IGC for gifts or convert it to NGN</p>
                 </div>
               </div>
-              <span className="bg-[#f0b429]/20 text-[#856404] text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest">Non-Withdrawable</span>
+              <span className="bg-[#f0b429]/20 text-[#856404] text-[8px] font-black px-3 py-1 rounded-full uppercase tracking-widest">
+                1 IGC = NGN {(walletData?.summary.igcToNgnRate ?? 10).toLocaleString()}
+              </span>
             </div>
 
             <p className="text-6xl font-black text-[#1a1635] italic">
               {loading && !walletData ? '...' : (walletData?.wallet.igcBalance ?? 0).toLocaleString()}
             </p>
 
-            <div className="flex">
+            <p className="text-sm font-bold text-[#856404]/80">
+              Estimated value: {formatCurrency(walletData?.summary.igcEstimatedValueNgn ?? 0, 'NGN')}
+            </p>
+
+            <div className="flex flex-wrap gap-4">
               <button
-                onClick={() => toast.info('Coin conversion is not available yet.')}
+                onClick={() => setIsBuyIgcOpen(true)}
                 className="bg-[#f0b429] text-white px-10 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-[#d39e00] transition-all shadow-lg shadow-[#f0b429]/20"
               >
-                Move Coins
+                Buy IGC
+              </button>
+              <button
+                onClick={() => setIsConvertIgcOpen(true)}
+                className="bg-[#1a1635] text-white px-10 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-black transition-all"
+              >
+                Convert to NGN
               </button>
             </div>
           </div>
           <div className="absolute -bottom-10 -right-10 w-64 h-64 bg-[#f0b429]/10 rotate-45 rounded-[3rem]" />
         </div>
+      </div>
+
+      <div className="rounded-[2rem] border border-white/10 bg-white/5 px-6 py-5 text-sm text-zinc-400">
+        Portfolio value: <span className="font-black text-white">{formatCurrency(walletData?.summary.totalPortfolioNgn ?? 0, 'NGN')}</span> •
+        Gift fee: <span className="font-black text-white"> {Math.round((walletData?.summary.platformFeeRate ?? 0.1) * 100)}%</span>
       </div>
 
       <div className="space-y-8">
@@ -321,6 +394,94 @@ export default function Wallet() {
       </div>
 
       <AnimatePresence>
+        {isBuyIgcOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0f0b21]/90 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="w-full max-w-md bg-[#1a1635] border border-white/10 rounded-[3rem] p-10 relative shadow-2xl"
+            >
+              <button onClick={() => setIsBuyIgcOpen(false)} className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+              <h3 className="text-3xl font-black text-white uppercase italic mb-3">Buy IGC</h3>
+              <p className="mb-8 text-sm text-zinc-500">
+                Use your NGN wallet balance to buy IGC at 1 IGC = NGN {(walletData?.summary.igcToNgnRate ?? 10).toLocaleString()}.
+              </p>
+              <form onSubmit={handleBuyIgc} className="space-y-8">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Amount (NGN)</label>
+                  <div className="relative">
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary font-black">NGN</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={buyIgcAmount}
+                      onChange={(e) => setBuyIgcAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-16 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                      required
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-brand-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-accent hover:text-black transition-all disabled:opacity-50 shadow-lg shadow-brand-primary/20"
+                >
+                  {isSubmitting ? 'Processing...' : 'Buy IGC'}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
+        {isConvertIgcOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0f0b21]/90 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="w-full max-w-md bg-[#1a1635] border border-white/10 rounded-[3rem] p-10 relative shadow-2xl"
+            >
+              <button onClick={() => setIsConvertIgcOpen(false)} className="absolute top-8 right-8 text-zinc-500 hover:text-white transition-colors">
+                <X size={24} />
+              </button>
+              <h3 className="text-3xl font-black text-white uppercase italic mb-3">Convert IGC</h3>
+              <p className="mb-8 text-sm text-zinc-500">
+                Convert IGC into withdrawable NGN at the current default rate.
+              </p>
+              <form onSubmit={handleConvertIgc} className="space-y-8">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Amount (IGC)</label>
+                  <div className="relative">
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary font-black">IGC</span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      value={convertIgcAmount}
+                      onChange={(e) => setConvertIgcAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-16 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                      required
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full bg-brand-primary text-white py-5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-brand-accent hover:text-black transition-all disabled:opacity-50 shadow-lg shadow-brand-primary/20"
+                >
+                  {isSubmitting ? 'Processing...' : 'Convert to NGN'}
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+
         {isDepositOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0f0b21]/90 backdrop-blur-md">
             <motion.div
@@ -337,13 +498,13 @@ export default function Wallet() {
               </button>
               <h3 className="text-3xl font-black text-white uppercase italic mb-3">Deposit Funds</h3>
               <p className="mb-8 text-sm text-zinc-500">
-                Continue to Paystack to fund your wallet. Your USD wallet will be credited after successful verification.
+                Continue to Paystack to fund your wallet. Your NGN wallet will be credited after successful verification.
               </p>
               <form onSubmit={handleDeposit} className="space-y-8">
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Amount</label>
                   <div className="relative">
-                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary font-black">$</span>
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary font-black">NGN</span>
                     <input
                       type="number"
                       min="1"
@@ -351,7 +512,7 @@ export default function Wallet() {
                       value={depositAmount}
                       onChange={(e) => setDepositAmount(e.target.value)}
                       placeholder="0.00"
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-12 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-16 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
                       required
                     />
                   </div>
@@ -385,9 +546,9 @@ export default function Wallet() {
               <h3 className="text-3xl font-black text-white uppercase italic mb-8">Withdraw Funds</h3>
               <form onSubmit={handleWithdraw} className="space-y-8">
                 <div className="space-y-3">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Amount (USD)</label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.3em] ml-1">Amount (NGN)</label>
                   <div className="relative">
-                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary font-black">$</span>
+                    <span className="absolute left-5 top-1/2 -translate-y-1/2 text-brand-primary font-black">NGN</span>
                     <input
                       type="number"
                       min="1"
@@ -395,7 +556,7 @@ export default function Wallet() {
                       value={withdrawAmount}
                       onChange={(e) => setWithdrawAmount(e.target.value)}
                       placeholder="0.00"
-                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-12 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
+                      className="w-full bg-black/40 border border-white/10 rounded-2xl py-5 pl-16 pr-6 text-white font-black focus:outline-none focus:border-brand-primary/50 transition-all"
                       required
                     />
                   </div>

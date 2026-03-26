@@ -267,7 +267,7 @@ export default function Social() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-black/20 px-4 py-2.5">
               <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Wallet</span>
-              <span className="text-sm font-black text-white">${walletData?.wallet.usdBalance.toFixed(2) ?? '0.00'}</span>
+              <span className="text-sm font-black text-white">{walletData?.wallet.igcBalance.toLocaleString() ?? '0'} IGC</span>
             </div>
             <button
               onClick={() => void fetchSocial()}
@@ -631,13 +631,15 @@ export default function Social() {
                 <div className="mt-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
                   <form onSubmit={handleGift} className="rounded-[2rem] border border-white/10 bg-black/20 p-5">
                     <p className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Send Gift</p>
+                    <p className="mt-2 text-xs text-zinc-500">Gifts are sent in IGC and converted to NGN for the receiver.</p>
                     <input
                       type="number"
                       min="1"
-                      step="0.01"
+                      step="1"
                       value={giftAmount}
                       onChange={(event) => setGiftAmount(event.target.value)}
                       className="mt-4 w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white outline-none"
+                      placeholder="Amount in IGC"
                     />
                     <button
                       type="submit"

@@ -44,8 +44,11 @@ export type StreamGiftEvent = {
   streamId: string;
   amount: number;
   giftedBy: string;
-  creditedAmount: number;
-  earningsUsd?: number;
+  creditedIgc: number;
+  creditedNgn: number;
+  feeIgc: number;
+  feeNgn: number;
+  earningsNgn?: number;
 };
 
 export type StreamLikeEvent = {
@@ -74,6 +77,7 @@ export type StreamParticipantUpdatedEvent = {
   streamId: string;
   participants: Stream['participants'];
   orientation?: Stream['orientation'];
+  mode?: Stream['mode'];
 };
 
 export type StreamMediaStateEvent = {
@@ -142,7 +146,7 @@ export function useStream() {
     });
 
     socketRef.current.on('streamGifted', (payload: StreamGiftEvent) => {
-      setStream((prev) => (prev ? { ...prev, earningsUsd: payload.earningsUsd ?? prev.earningsUsd } : prev));
+      setStream((prev) => (prev ? { ...prev, earningsUsd: payload.earningsNgn ?? prev.earningsUsd } : prev));
       setRecentGift(payload);
     });
 
@@ -165,6 +169,7 @@ export function useStream() {
               ...prev,
               participants: payload.participants,
               orientation: payload.orientation ?? prev.orientation,
+              mode: payload.mode ?? prev.mode,
             }
           : prev,
       );

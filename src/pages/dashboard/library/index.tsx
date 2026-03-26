@@ -34,6 +34,7 @@ export default function GameLibrary() {
     featured: activeTab === 'featured' ? true : undefined,
   });
   const {
+    matches,
     activities,
     loading: pledgesLoading,
     error: pledgesError,
@@ -51,12 +52,12 @@ export default function GameLibrary() {
   ];
 
   const matchesByGameId = useMemo(() => {
-    return activities.reduce<Record<string, MatchActivity[]>>((acc, match) => {
+    return matches.reduce<Record<string, MatchActivity[]>>((acc, match) => {
       acc[match.gameId] ??= [];
       acc[match.gameId].push(match);
       return acc;
     }, {});
-  }, [activities]);
+  }, [matches]);
 
   const visibleGames = useMemo(() => {
     if (activeTab === 'active') {
@@ -216,7 +217,7 @@ export default function GameLibrary() {
     }
   };
 
-  const activeOpenActivities = activities.filter((activity) => activity.status === 'open');
+  const activeOpenActivities = matches.filter((activity) => activity.status === 'open');
 
   return (
     <div className="space-y-12 pb-12">

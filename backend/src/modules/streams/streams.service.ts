@@ -104,7 +104,7 @@ export class StreamsService {
     return this.streamModel
       .find({
         hostUserId: this.objectId(userId),
-        recordingUrl: { $ne: '' },
+        recordingUrl: { $exists: true, $nin: ['', null] },
       })
       .sort({ recordedAt: -1, endedAt: -1, createdAt: -1 })
       .lean();
@@ -156,6 +156,7 @@ export class StreamsService {
         },
         metadata: JSON.stringify({
           streamId: stream.id,
+          userId,
           username,
         }),
         name: username,
@@ -178,7 +179,6 @@ export class StreamsService {
 
   async startStream(userId: string, username: string, dto: StartStreamDto) {
     const hostUser = await this.usersService.findById(userId);
-    const shareUrl = `${this.getPublicAppUrl()}/stream/${new Types.ObjectId().toString()}`;
     const roomName = `igamia-stream-${userId}-${Date.now()}`;
     const title = dto.title.trim().slice(0, 120);
     const description = dto.description?.trim()
@@ -207,10 +207,13 @@ export class StreamsService {
           joinedAt: new Date(),
         },
       ],
-      shareUrl,
+      shareUrl: '',
       roomName,
       livekitRoomName: roomName,
     });
+
+    stream.shareUrl = `${this.getPublicAppUrl()}/stream?streamId=${stream._id.toString()}`;
+    await stream.save();
 
     return stream.toObject();
   }
@@ -254,10 +257,25 @@ export class StreamsService {
         avatarUrl: '',
         joinedAt: new Date(),
       })),
-      shareUrl: `${this.getPublicAppUrl()}/stream/${new Types.ObjectId().toString()}`,
+      shareUrl: '',
       livekitRoomName: roomName,
     });
 
+    stream.shareUrl = `${this.getPublicAppUrl()}/stream?streamId=${stream._id.toString()}`;
+    await stream.save();
+
+    return stream.toObject();
+  }
+
+  async convertPledgeStreamToNormal(streamId: string) {
+    const stream = await this.requireStream(streamId);
+    if (stream.mode !== 'pledge') {
+      return stream.toObject();
+    }
+
+    stream.mode = 'normal';
+    stream.matchId = undefined;
+    await stream.save();
     return stream.toObject();
   }
 
@@ -345,18 +363,16 @@ export class StreamsService {
     const stream = await this.requireStream(streamId);
     this.ensureHost(stream, userId);
 
-    if (!stream.recordingUrl?.trim()) {
-      throw new NotFoundException('Recorded stream not found');
-    }
-
-    try {
-      await this.mediaService.deleteMedia(stream.recordingUrl, 'video');
-    } catch (error) {
-      this.logger.warn(
-        `Failed to delete recording asset for stream ${streamId}: ${
-          error instanceof Error ? error.message : 'Unknown error'
-        }`,
-      );
+    if (stream.recordingUrl?.trim()) {
+      try {
+        await this.mediaService.deleteMedia(stream.recordingUrl, 'video');
+      } catch (error) {
+        this.logger.warn(
+          `Failed to delete recording asset for stream ${streamId}: ${
+            error instanceof Error ? error.message : 'Unknown error'
+          }`,
+        );
+      }
     }
 
     stream.recordingUrl = '';
@@ -661,7 +677,7 @@ export class StreamsService {
       description: dto.description || `Gift sent during ${stream.title}`,
     } as GiftDto);
 
-    stream.earningsUsd = Number(((stream.earningsUsd ?? 0) + result.creditedAmount).toFixed(2));
+    stream.earningsUsd = Number(((stream.earningsUsd ?? 0) + result.creditedNgn).toFixed(2));
     await stream.save();
 
     return {
@@ -669,7 +685,7 @@ export class StreamsService {
       streamId,
       streamTitle: stream.title,
       hostUserId: stream.hostUserId.toString(),
-      earningsUsd: stream.earningsUsd,
+      earningsNgn: stream.earningsUsd,
     };
   }
 }

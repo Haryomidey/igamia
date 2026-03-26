@@ -343,26 +343,27 @@ export default function History() {
         {recordings.length ? (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {recordings.map((recording) => (
-              <VideoCard
-                key={recording._id}
-                video={{
-                  id: recording._id,
-                  title: recording.title,
-                  recordingUrl: recording.recordingUrl,
-                  thumbnail: `https://picsum.photos/seed/${recording._id}/900/600`,
-                  duration: formatRecordingDuration(recording.recordingDurationSeconds),
-                  recordedAt: recording.recordedAt ? new Date(recording.recordedAt).toLocaleDateString() : 'Saved stream',
-                  description: 'Replay a saved live session with the original stream audio and timeline controls.',
-                }}
-                isDeleting={deletingRecordingId === recording._id}
-                onDelete={(recordingId) => {
-                  if (deletingRecordingId === recordingId) {
-                    return;
-                  }
+              <div key={recording._id}>
+                <VideoCard
+                  video={{
+                    id: recording._id,
+                    title: recording.title,
+                    recordingUrl: recording.recordingUrl,
+                    thumbnail: `https://picsum.photos/seed/${recording._id}/900/600`,
+                    duration: formatRecordingDuration(recording.recordingDurationSeconds),
+                    recordedAt: recording.recordedAt ? new Date(recording.recordedAt).toLocaleDateString() : 'Saved stream',
+                    description: 'Replay a saved live session with the original stream audio and timeline controls.',
+                  }}
+                  isDeleting={deletingRecordingId === recording._id}
+                  onDelete={(recordingId) => {
+                    if (deletingRecordingId === recordingId) {
+                      return;
+                    }
 
-                  void handleDeleteRecording(recordingId, recording.title);
-                }}
-              />
+                    void handleDeleteRecording(recordingId, recording.title);
+                  }}
+                />
+              </div>
             ))}
           </div>
         ) : (

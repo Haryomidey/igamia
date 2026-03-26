@@ -71,6 +71,19 @@ export default function Home() {
     navigate('/login', { state: { from: location } });
   };
 
+  const openStream = (targetStreamId?: string | null) => {
+    if (!targetStreamId) {
+      return;
+    }
+
+    if (!isAuthenticated) {
+      requireLogin('Log in first to watch or join a live stream.');
+      return;
+    }
+
+    navigate(`/stream?streamId=${targetStreamId}`);
+  };
+
   const showPreviousStream = () => {
     if (!canBrowseStreams) {
       return;
@@ -134,7 +147,7 @@ export default function Home() {
               <Coins size={14} className="text-white" />
             </div>
             <span className="text-sm font-black text-white">
-              {(walletData?.wallet.igcBalance ?? 1500).toLocaleString()} <span className="text-brand-primary">IGC</span>
+              {(walletData?.wallet.igcBalance ?? 0).toLocaleString()} <span className="text-brand-primary">IGC</span>
             </span>
           </div>
         </div>
@@ -220,7 +233,7 @@ export default function Home() {
                 <div className="flex flex-col items-center gap-4">
                   <button
                     type="button"
-                    onClick={() => requireLogin('Log in first to watch or join a live stream.')}
+                    onClick={() => openStream(topStream?._id)}
                     className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-primary text-white shadow-2xl shadow-brand-primary/40 transition-transform hover:scale-110 group-hover:bg-brand-accent group-hover:text-black"
                   >
                     <Play size={32} className="fill-current ml-1" />
@@ -228,7 +241,7 @@ export default function Home() {
                   <div className="flex flex-wrap items-center justify-center gap-3 px-4">
                     <button
                       type="button"
-                      onClick={() => requireLogin('Log in first to watch or join a live stream.')}
+                      onClick={() => openStream(topStream?._id)}
                       className="rounded-full border border-white/15 bg-black/35 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-white backdrop-blur-md transition-colors hover:bg-white/15"
                     >
                       Watch This Stream
@@ -249,7 +262,7 @@ export default function Home() {
             {secondaryStream && (
               <button
                 type="button"
-                onClick={() => requireLogin('Log in first to watch or join a live stream.')}
+                onClick={() => openStream(secondaryStream._id)}
                 className="lg:col-span-3 hidden lg:block relative rounded-[2.5rem] overflow-hidden border border-white/10 transition-transform hover:-translate-y-1"
               >
                 <img

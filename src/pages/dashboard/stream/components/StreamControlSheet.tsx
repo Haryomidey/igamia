@@ -57,6 +57,7 @@ export function StreamControlSheet({
   isCoStreamerView,
   isPledgeStream,
   canRespondToClaim,
+  canClaimPledge,
   pendingClaimLabel,
   isMicMuted,
   isCameraPaused,
@@ -79,6 +80,7 @@ export function StreamControlSheet({
   isCoStreamerView: boolean;
   isPledgeStream: boolean;
   canRespondToClaim: boolean;
+  canClaimPledge: boolean;
   pendingClaimLabel?: string | null;
   isMicMuted: boolean;
   isCameraPaused: boolean;
@@ -188,12 +190,14 @@ export function StreamControlSheet({
                   <Trophy size={18} className="text-yellow-400" />
                   <span className="font-semibold text-white">Pledge Results</span>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
-                  <button onClick={() => onClaimPledge('win')} className="rounded-xl bg-green-500/20 py-2 text-xs font-bold uppercase text-green-300">Win</button>
-                  <button onClick={() => onClaimPledge('loss')} className="rounded-xl bg-red-500/20 py-2 text-xs font-bold uppercase text-red-200">Lose</button>
-                  <button onClick={() => onClaimPledge('draw')} className="rounded-xl bg-blue-500/20 py-2 text-xs font-bold uppercase text-blue-200">Draw</button>
-                  <button onClick={() => onClaimPledge('dispute')} className="rounded-xl bg-orange-500/20 py-2 text-xs font-bold uppercase text-orange-200">Dispute</button>
-                </div>
+                {canClaimPledge && (
+                  <div className="grid grid-cols-4 gap-2">
+                    <button onClick={() => onClaimPledge('win')} className="rounded-xl bg-green-500/20 py-2 text-xs font-bold uppercase text-green-300">Win</button>
+                    <button onClick={() => onClaimPledge('loss')} className="rounded-xl bg-red-500/20 py-2 text-xs font-bold uppercase text-red-200">Lose</button>
+                    <button onClick={() => onClaimPledge('draw')} className="rounded-xl bg-blue-500/20 py-2 text-xs font-bold uppercase text-blue-200">Draw</button>
+                    <button onClick={() => onClaimPledge('dispute')} className="rounded-xl bg-orange-500/20 py-2 text-xs font-bold uppercase text-orange-200">Dispute</button>
+                  </div>
+                )}
                 {pendingClaimLabel && (
                   <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-200">
                     {pendingClaimLabel}

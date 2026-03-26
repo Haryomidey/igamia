@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { PledgeNotificationsProvider } from './components/PledgeNotifications';
 import Home from './pages/dashboard/home';
 import Mining from './pages/dashboard/mining';
 import Wallet from './pages/dashboard/wallet';
@@ -29,43 +30,45 @@ import MessagesPage from './pages/dashboard/messages';
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/verify" element={<OtpPage />} />
-
-      <Route element={<Layout />}>
-        <Route path="/" element={<Home />} />
-        <Route path="/home" element={<Navigate to="/" replace />} />
-        <Route path="/social" element={<Social />} />
-        <Route path="/post/:postId" element={<PostPage />} />
-        <Route path="/watch-earn" element={<WatchEarn />} />
-        <Route path="/more" element={<More />} />
-        <Route path="/faq" element={<FAQ />} />
-        <Route path="/leaderboard" element={<Leaderboard />} />
-      </Route>
-
-      <Route element={<ProtectedRoute />}>
-        <Route path="/personalize" element={<PersonalizePage />} />
-        <Route path="/play" element={<GamePlay />} />
-        <Route path="/stream" element={<LiveStream />} />
+    <PledgeNotificationsProvider>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify" element={<OtpPage />} />
 
         <Route element={<Layout />}>
-          <Route path="/library" element={<GameLibrary />} />
-          <Route path="/mining" element={<Mining />} />
-          <Route path="/wallet" element={<Wallet />} />
-          <Route path="/messages/:userId" element={<MessagesPage />} />
-          <Route path="/history" element={<History />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/token" element={<TokenPage />} />
-          <Route path="/refer" element={<Refer />} />
-          <Route path="/disputes/:matchId" element={<DisputePage />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/home" element={<Navigate to="/" replace />} />
+          <Route path="/social" element={<Social />} />
+          <Route path="/post/:postId" element={<PostPage />} />
+          <Route path="/watch-earn" element={<WatchEarn />} />
+          <Route path="/more" element={<More />} />
+          <Route path="/faq" element={<FAQ />} />
+          <Route path="/leaderboard" element={<Leaderboard />} />
         </Route>
-      </Route>
 
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route element={<ProtectedRoute />}>
+          <Route path="/personalize" element={<PersonalizePage />} />
+          <Route path="/play" element={<GamePlay />} />
+          <Route path="/stream" element={<LiveStream />} />
+
+          <Route element={<Layout />}>
+            <Route path="/library" element={<GameLibrary />} />
+            <Route path="/mining" element={<Mining />} />
+            <Route path="/wallet" element={<Wallet />} />
+            <Route path="/messages/:userId" element={<MessagesPage />} />
+            <Route path="/history" element={<History />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/token" element={<TokenPage />} />
+            <Route path="/refer" element={<Refer />} />
+            <Route path="/disputes/:matchId" element={<DisputePage />} />
+          </Route>
+        </Route>
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </PledgeNotificationsProvider>
   );
 }

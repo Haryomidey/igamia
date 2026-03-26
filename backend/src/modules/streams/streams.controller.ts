@@ -210,8 +210,11 @@ export class StreamsController {
       streamId,
       amount: dto.amount,
       giftedBy: user.username,
-      creditedAmount: result.creditedAmount,
-      earningsUsd: result.earningsUsd,
+      creditedIgc: result.creditedIgc,
+      creditedNgn: result.creditedNgn,
+      feeIgc: result.feeIgc,
+      feeNgn: result.feeNgn,
+      earningsNgn: result.earningsNgn,
     });
     return result;
   }

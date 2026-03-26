@@ -262,8 +262,11 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
       streamId: payload.streamId,
       amount: payload.amount,
       giftedBy: client.data.user.username,
-      creditedAmount: result.creditedAmount,
-      earningsUsd: result.earningsUsd,
+      creditedIgc: result.creditedIgc,
+      creditedNgn: result.creditedNgn,
+      feeIgc: result.feeIgc,
+      feeNgn: result.feeNgn,
+      earningsNgn: result.earningsNgn,
     });
     return result;
   }
@@ -314,6 +317,26 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
     },
   ) {
     this.server.to(streamId).emit('streamMediaStateUpdated', {
+      streamId,
+      ...payload,
+    });
+  }
+
+  emitParticipantUpdated(
+    streamId: string,
+    payload: {
+      participants: Array<{
+        userId: string;
+        role: 'host' | 'guest' | 'invited';
+        username: string;
+        avatarUrl?: string;
+        joinedAt: Date | string;
+      }>;
+      orientation?: 'vertical' | 'horizontal' | 'pip';
+      mode?: 'normal' | 'pledge';
+    },
+  ) {
+    this.server.to(streamId).emit('streamParticipantUpdated', {
       streamId,
       ...payload,
     });

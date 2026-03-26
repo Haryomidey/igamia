@@ -62,6 +62,10 @@ function truncateLabel(value: string, maxLength = 18) {
   return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }
 
+function normalizeLiveValue(value?: string | null) {
+  return value?.trim().toLowerCase() ?? '';
+}
+
 function tileLayoutClass(count: number, index: number, orientation: Stream['orientation']) {
   if (count <= 1) {
     return 'h-full w-full';
@@ -78,54 +82,61 @@ function tileLayoutClass(count: number, index: number, orientation: Stream['orie
   return 'h-1/2 w-1/2';
 }
 
-function sortStageParticipants(
-  participants: Stream['participants'],
-  activeParticipantUserId?: string,
-) {
-  if (!activeParticipantUserId) {
-    return participants;
-  }
-
-  const active = participants.find((participant) => participant.userId === activeParticipantUserId);
-  const others = participants.filter((participant) => participant.userId !== activeParticipantUserId);
-  return active ? [active, ...others] : participants;
-}
-
 export function StreamStageGrid({
   participants,
   videoTiles,
   mediaStates,
   orientation,
-  activeParticipantUserId,
   canRemoveParticipants,
   currentUserId,
   heroImage,
   onRemoveParticipant,
-  onSelectParticipant,
   onVideoElementChange,
 }: {
   participants: Stream['participants'];
   videoTiles: VideoTile[];
   mediaStates: Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>;
   orientation: Stream['orientation'];
-  activeParticipantUserId?: string;
   canRemoveParticipants: boolean;
   currentUserId?: string;
   heroImage: string;
   onRemoveParticipant: (participantUserId: string, participantUsername: string) => void;
-  onSelectParticipant?: (participantUserId: string) => void;
   onVideoElementChange?: (participantUserId: string, element: HTMLVideoElement | null) => void;
 }) {
-  const stageParticipants = sortStageParticipants(
-    participants.filter((participant) => participant.role !== 'invited').slice(0, 4),
-    activeParticipantUserId,
-  );
+  const mappedParticipants = participants.filter((participant) => participant.role !== 'invited');
+  const stageParticipants = [
+    ...mappedParticipants,
+    ...videoTiles
+      .filter((tile) => {
+        const tileUserId = normalizeLiveValue(tile.participantUserId);
+        const tileName = normalizeLiveValue(tile.participantName);
+        return !mappedParticipants.some(
+          (participant) =>
+            normalizeLiveValue(participant.userId) === tileUserId ||
+            normalizeLiveValue(participant.username) === tileName,
+        );
+      })
+      .map((tile) => ({
+        userId: tile.participantUserId,
+        role: tile.isLocal ? 'host' : 'guest',
+        username: tile.participantName || 'Guest',
+        avatarUrl: '',
+        joinedAt: new Date().toISOString(),
+      })),
+  ].slice(0, 4);
   const total = Math.max(stageParticipants.length, 1);
 
   return (
     <div className="absolute inset-0 overflow-hidden bg-black">
       {stageParticipants.map((participant, index) => {
-        const tile = videoTiles.find((entry) => entry.participantUserId === participant.userId);
+        const tile = videoTiles.find((entry) => {
+          const participantUserId = normalizeLiveValue(participant.userId);
+          const participantUsername = normalizeLiveValue(participant.username);
+          return (
+            normalizeLiveValue(entry.participantUserId) === participantUserId ||
+            normalizeLiveValue(entry.participantName) === participantUsername
+          );
+        });
         const state = mediaStates[participant.userId];
         const cameraOff = Boolean(state?.isCameraOff);
         const muted = Boolean(state?.isMuted);
@@ -137,7 +148,6 @@ export function StreamStageGrid({
         return (
           <div
             key={participant.userId}
-            onClick={() => onSelectParticipant?.(participant.userId)}
             className={`absolute overflow-hidden border border-white/5 bg-black transition-all duration-500 ${
               isPipOverlay
                 ? 'right-4 z-30 h-36 w-24 rounded-2xl shadow-2xl'
@@ -185,10 +195,10 @@ export function StreamStageGrid({
                 <div className="absolute inset-0 bg-linear-to-t from-black via-black/60 to-black/35" />
                 <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
                   <VideoOff size={20} className="text-white/80 sm:size-6" />
-                  <p className="mt-2 text-[10px] font-black uppercase italic text-white sm:mt-4 sm:text-lg">
+                  <p className="mt-2 text-[10px] font-black uppercase italic text-white sm:mt-3 sm:text-sm">
                     {participant.username}
                   </p>
-                  <p className="mt-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-300 sm:mt-2 sm:text-xs sm:tracking-[0.22em]">
+                  <p className="mt-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-300 sm:mt-1.5 sm:text-[10px] sm:tracking-[0.18em]">
                     {cameraOff
                       ? isCurrentUserTile
                         ? 'You paused video'

@@ -59,6 +59,23 @@ function hasTrackPublication(
   return typeof value === 'object' && value !== null && 'track' in value;
 }
 
+function resolveLiveParticipantUserId(participant: Participant) {
+  if (participant.identity) {
+    return participant.identity;
+  }
+
+  if ('metadata' in participant && typeof participant.metadata === 'string' && participant.metadata.trim()) {
+    try {
+      const parsed = JSON.parse(participant.metadata) as { userId?: string };
+      if (parsed.userId) {
+        return parsed.userId;
+      }
+    } catch {}
+  }
+
+  return participant.sid;
+}
+
 function truncateText(value: string, maxLength: number) {
   return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }
@@ -151,7 +168,6 @@ export default function LiveStream() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [showControlSheet, setShowControlSheet] = useState(false);
-  const [selectedParticipantUserId, setSelectedParticipantUserId] = useState<string | null>(null);
   const [giftAmount, setGiftAmount] = useState('10');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [sendingShareUserId, setSendingShareUserId] = useState<string | null>(null);
@@ -168,7 +184,6 @@ export default function LiveStream() {
   const [giftTicker, setGiftTicker] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [roomReconnectKey, setRoomReconnectKey] = useState(0);
-  const [liveNowTimestamp, setLiveNowTimestamp] = useState(() => Date.now());
   const [mediaStates, setMediaStates] = useState<Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>>({});
   const [pledgeMatch, setPledgeMatch] = useState<MatchActivity | null>(null);
   const [streamEndedOverlay, setStreamEndedOverlay] = useState<StreamEndedOverlay | null>(null);
@@ -203,10 +218,7 @@ export default function LiveStream() {
     : -1;
   const host = stream?.participants.find((participant) => participant.role === 'host') ?? stream?.participants[0];
   const currentParticipant = stream?.participants.find((participant) => participant.userId === user?._id);
-  const activeParticipant =
-    stream?.participants.find((participant) => participant.userId === selectedParticipantUserId) ??
-    currentParticipant ??
-    host;
+  const activeParticipant = currentParticipant ?? host;
   const isHostView = Boolean(user?._id && stream?.hostUserId === user._id);
   const isPledgeStream = stream?.mode === 'pledge';
   const isParticipantView = currentParticipant?.role === 'host' || currentParticipant?.role === 'guest';
@@ -216,6 +228,14 @@ export default function LiveStream() {
   const canRemoveParticipants = isHostView && !isPledgeStream;
   const pendingClaim = pledgeMatch?.resultClaim?.status === 'pending' ? pledgeMatch.resultClaim : null;
   const isClaimOwner = Boolean(pendingClaim?.claimedByUserId && pendingClaim.claimedByUserId === user?._id);
+  const canMakePledgeClaim = Boolean(
+    isPledgeStream &&
+      isParticipantView &&
+      pledgeMatch &&
+      pledgeMatch.status !== 'settled' &&
+      pledgeMatch.status !== 'disputed' &&
+      pledgeMatch.resultClaim?.status !== 'pending',
+  );
   const canRespondToClaim = Boolean(
     pendingClaim &&
       pendingClaim.claimedByUserId &&
@@ -240,37 +260,16 @@ export default function LiveStream() {
     () => Boolean(host?.userId && friends.some((friend) => friend.id === host.userId)),
     [friends, host?.userId],
   );
-  const liveDurationLabel = useMemo(() => {
-    if (!isHostView || !host?.joinedAt) {
-      return null;
-    }
-
-    const startedAt = new Date(host.joinedAt).getTime();
-    if (Number.isNaN(startedAt)) {
-      return null;
-    }
-
-    return formatElapsedDuration(Math.floor((liveNowTimestamp - startedAt) / 1000));
-  }, [host?.joinedAt, isHostView, liveNowTimestamp]);
+  const recordingDurationLabel = useMemo(
+    () => (isRecording ? formatElapsedDuration(recordingDurationSeconds) : null),
+    [isRecording, recordingDurationSeconds],
+  );
   const primaryTile = useMemo(
     () => videoTiles.find((tile) => tile.participantUserId === user?._id) ?? videoTiles[0] ?? null,
     [user?._id, videoTiles],
   );
   const isStreamEndedForViewer = Boolean(streamEndedOverlay && !isHostView);
 
-  useEffect(() => {
-    if (!stream?.participants?.length) {
-      setSelectedParticipantUserId(null);
-      return;
-    }
-
-    const stillExists = stream.participants.some((participant) => participant.userId === selectedParticipantUserId);
-    if (selectedParticipantUserId && stillExists) {
-      return;
-    }
-
-    setSelectedParticipantUserId(currentParticipant?.userId ?? host?.userId ?? stream.participants[0]?.userId ?? null);
-  }, [currentParticipant?.userId, host?.userId, selectedParticipantUserId, stream?.participants]);
   useEffect(() => {
     if (!resolvedStreamId) {
       return;
@@ -324,16 +323,18 @@ export default function LiveStream() {
     }
 
     const id = Date.now();
-    setActivityOverlays((current) => [...current.slice(-2), { id, message: `${recentGift.giftedBy} sent $${recentGift.amount.toFixed(2)}`, accent: 'gift' }]);
+    setActivityOverlays((current) => [...current.slice(-2), { id, message: `${recentGift.giftedBy} sent ${recentGift.amount.toFixed(2)} IGC`, accent: 'gift' }]);
     if (isHostView) {
-      setGiftTicker(`${recentGift.giftedBy} sent $${recentGift.amount.toFixed(2)} · +$${recentGift.creditedAmount.toFixed(2)}`);
+      setGiftTicker(
+        `${recentGift.giftedBy} sent ${recentGift.amount.toFixed(2)} IGC · +NGN ${recentGift.creditedNgn.toLocaleString()}`,
+      );
     }
     const timeout = window.setTimeout(() => {
       setActivityOverlays((current) => current.filter((entry) => entry.id !== id));
     }, 3200);
     const tickerTimeout = window.setTimeout(() => {
       setGiftTicker((current) =>
-        current === `${recentGift.giftedBy} sent $${recentGift.amount.toFixed(2)} · +$${recentGift.creditedAmount.toFixed(2)}`
+        current === `${recentGift.giftedBy} sent ${recentGift.amount.toFixed(2)} IGC · +NGN ${recentGift.creditedNgn.toLocaleString()}`
           ? null
           : current,
       );
@@ -361,19 +362,6 @@ export default function LiveStream() {
       setLikeNotices((current) => current.filter((entry) => entry.id !== id));
     }, 1800);
   }, [isHostView, recentLike, resolvedStreamId]);
-
-  useEffect(() => {
-    if (!isHostView || !host?.joinedAt) {
-      return;
-    }
-
-    setLiveNowTimestamp(Date.now());
-    const interval = window.setInterval(() => {
-      setLiveNowTimestamp(Date.now());
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [host?.joinedAt, isHostView]);
 
   useEffect(() => {
     if (
@@ -512,7 +500,7 @@ export default function LiveStream() {
       }
 
       const id = `${participant.sid}-${track.sid}`;
-      const participantUserId = participant.identity || participant.sid;
+      const participantUserId = resolveLiveParticipantUserId(participant);
       setVideoTiles((current) => {
         const next = current.filter((tile) => tile.id !== id);
         next.push({ id, participantUserId, participantName: participantLabel(participant), isLocal, track });
@@ -779,7 +767,7 @@ export default function LiveStream() {
       setIsSubmitting(true);
       await giftStream(resolvedStreamId, {
         amount: Number(giftAmount),
-        description: `Gift sent during ${stream?.title ?? 'live stream'}`,
+        description: `IGC gift sent during ${stream?.title ?? 'live stream'}`,
       });
       setIsGifting(false);
       setGiftAmount('10');
@@ -1210,7 +1198,7 @@ export default function LiveStream() {
 
     try {
       await respondToResultClaim(stream.matchId, { decision });
-      const nextMatch = await fetchMatch(stream.matchId);
+      const [nextMatch] = await Promise.all([fetchMatch(stream.matchId), fetchStream(resolvedStreamId)]);
       setPledgeMatch(nextMatch);
       toast.success(
         decision === 'approve'
@@ -1247,11 +1235,9 @@ export default function LiveStream() {
           videoTiles={videoTiles}
           mediaStates={mediaStates}
           orientation={stream?.orientation ?? 'vertical'}
-          activeParticipantUserId={activeParticipant?.userId}
           canRemoveParticipants={canRemoveParticipants}
           currentUserId={user?._id}
           heroImage={heroImage}
-          onSelectParticipant={(participantUserId) => setSelectedParticipantUserId(participantUserId)}
           onVideoElementChange={handleStageVideoElementChange}
           onRemoveParticipant={(participantUserId, participantUsername) => {
             void handleRemoveParticipant(participantUserId, participantUsername);
@@ -1295,11 +1281,11 @@ export default function LiveStream() {
             </p>
             <h2
               title={stream?.title ?? 'Live Session'}
-              className="mt-2 max-w-xl text-lg font-black uppercase italic text-white sm:mt-3 sm:max-w-2xl sm:text-4xl"
+              className="mt-2 max-w-lg text-base font-black uppercase italic text-white sm:mt-3 sm:max-w-xl sm:text-2xl"
             >
               {truncateText(stream?.title ?? 'Live Session', 44)}
             </h2>
-            <p className="mt-1.5 max-w-sm text-[11px] leading-relaxed text-zinc-300 sm:mt-2 sm:max-w-xl sm:text-sm">
+            <p className="mt-1.5 max-w-sm text-[10px] leading-relaxed text-zinc-300 sm:mt-2 sm:max-w-xl sm:text-xs">
               {connectionStatus === 'error'
                 ? 'Room unavailable. Reconnect.'
                 : isHostView
@@ -1334,9 +1320,9 @@ export default function LiveStream() {
           onClose={() => navigate('/home')}
           onOpenControlSheet={() => setShowControlSheet(true)}
           onFollowHost={() => void handleFollowHost()}
-              onShare={() => void handleShare()}
-              liveDurationLabel={liveDurationLabel}
-              isSavingRecording={isSavingRecording}
+          onShare={() => void handleShare()}
+          recordingDurationLabel={recordingDurationLabel}
+          isSavingRecording={isSavingRecording}
         />
 
         <AnimatePresence>
@@ -1459,9 +1445,7 @@ export default function LiveStream() {
                         : `${pledgeMatch.resultClaim.outcome} pending`
                       : 'Result'}
               </span>
-              {pledgeMatch.status !== 'settled' &&
-                pledgeMatch.status !== 'disputed' &&
-                pledgeMatch.resultClaim?.status !== 'pending' && (
+              {canMakePledgeClaim && (
                 <>
                   <button
                     onClick={() => void handlePledgeClaim('win')}
@@ -1520,6 +1504,7 @@ export default function LiveStream() {
                     ? navigate(`/disputes/${pledgeMatch._id}`)
                     : void handlePledgeClaim('dispute')
                 }
+                disabled={pledgeMatch.status === 'settled'}
                 className="rounded-full bg-brand-primary/20 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-brand-primary sm:px-3 sm:py-1.5 sm:text-[9px]"
               >
                 {pledgeMatch.status === 'disputed' ? 'Open' : 'Dispute'}
@@ -1552,6 +1537,7 @@ export default function LiveStream() {
           isCoStreamerView={isCoStreamerView}
           isPledgeStream={isPledgeStream}
           canRespondToClaim={canRespondToClaim}
+          canClaimPledge={canMakePledgeClaim}
           pendingClaimLabel={
             pendingClaim
               ? `${pendingClaim.claimedByUsername} claimed ${pendingClaim.outcome}${pendingClaim.note ? ` · ${pendingClaim.note}` : ''}`
@@ -1585,10 +1571,10 @@ export default function LiveStream() {
               <p className="text-[10px] font-black uppercase tracking-[0.34em] text-brand-accent">
                 Live Ended
               </p>
-              <h2 className="mt-4 text-3xl font-black uppercase italic text-white sm:text-4xl">
-                {streamEndedOverlay.hostUsername} has ended the live
+              <h2 className="mt-4 text-xl font-black uppercase italic text-white sm:text-2xl">
+                {streamEndedOverlay.hostUsername} ended the live
               </h2>
-              <p className="mt-4 text-sm leading-relaxed text-zinc-300 sm:text-base">
+              <p className="mt-3 text-xs leading-relaxed text-zinc-300 sm:text-sm">
                 Redirecting in {streamEndedOverlay.countdownSeconds} second{streamEndedOverlay.countdownSeconds === 1 ? '' : 's'}.
               </p>
             </div>

@@ -8,11 +8,19 @@ export type WalletSnapshot = {
     usdBalance: number;
     igcBalance: number;
   };
+  summary: {
+    fiatCurrency: 'NGN';
+    fiatBalance: number;
+    igcToNgnRate: number;
+    platformFeeRate: number;
+    igcEstimatedValueNgn: number;
+    totalPortfolioNgn: number;
+  };
   transactions: Array<{
     _id: string;
     type: string;
     amount: number;
-    currency: 'USD' | 'IGC';
+    currency: 'USD' | 'NGN' | 'IGC';
     status: 'pending' | 'completed' | 'failed';
     description: string;
     createdAt?: string;
@@ -49,6 +57,18 @@ export function useWallet(autoLoad = true) {
 
   const withdraw = async (amount: number) => {
     const { data } = await api.post('/wallet/withdraw', { amount });
+    await fetchWallet();
+    return data;
+  };
+
+  const convertIgc = async (amount: number) => {
+    const { data } = await api.post('/wallet/convert-igc', { amount });
+    await fetchWallet();
+    return data;
+  };
+
+  const buyIgc = async (amountNgn: number) => {
+    const { data } = await api.post('/wallet/buy-igc', { amountNgn });
     await fetchWallet();
     return data;
   };
@@ -92,6 +112,8 @@ export function useWallet(autoLoad = true) {
     error,
     fetchWallet,
     withdraw,
+    convertIgc,
+    buyIgc,
     gift,
     initializePayment,
     verifyPayment,

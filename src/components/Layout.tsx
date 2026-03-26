@@ -1,7 +1,8 @@
 import React from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { BottomNav, Sidebar } from './Navigation';
-import { PledgeNotificationsBell, PledgeNotificationsProvider } from './PledgeNotifications';
+import { PledgeNotificationsBell } from './PledgeNotifications';
+import { DirectMessageNotifications } from './DirectMessageNotifications';
 import { useAuth } from '../hooks/useAuth';
 import { getAccessToken } from '../api/axios';
 
@@ -25,7 +26,10 @@ export function Layout() {
             {isResolvingAuthenticatedShell ? (
               <div className="h-[4.5rem] w-[11.5rem] rounded-[1.4rem] border border-white/10 bg-[#1a1635]/90 shadow-2xl backdrop-blur-xl" />
             ) : isAuthenticated ? (
-              <PledgeNotificationsBell />
+              <>
+                <DirectMessageNotifications />
+                <PledgeNotificationsBell />
+              </>
             ) : (
               <div className="flex items-center gap-3 rounded-[1.4rem] border border-white/10 bg-[#1a1635]/90 px-3 py-3 shadow-2xl backdrop-blur-xl">
                 <Link
@@ -51,10 +55,6 @@ export function Layout() {
       <BottomNav />
     </div>
   );
-
-  if (isAuthenticated || isResolvingAuthenticatedShell) {
-    return <PledgeNotificationsProvider>{content}</PledgeNotificationsProvider>;
-  }
 
   return content;
 }

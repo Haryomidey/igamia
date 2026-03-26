@@ -23,7 +23,7 @@ export function StreamHeader({
   connectionStatus,
   canOpenControls,
   activeParticipant,
-  liveDurationLabel,
+  recordingDurationLabel,
   isSavingRecording,
   onBack,
   onClose,
@@ -40,7 +40,7 @@ export function StreamHeader({
   connectionStatus: ConnectionStatus;
   canOpenControls: boolean;
   activeParticipant?: Stream['participants'][number];
-  liveDurationLabel?: string | null;
+  recordingDurationLabel?: string | null;
   isSavingRecording?: boolean;
   onBack: () => void;
   onClose: () => void;
@@ -90,9 +90,9 @@ export function StreamHeader({
                   Connecting
                 </span>
               )}
-              {isHostView && liveDurationLabel && (
+              {isHostView && recordingDurationLabel && (
                 <span className="rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-200 backdrop-blur-md">
-                  Live {liveDurationLabel}
+                  Rec {recordingDurationLabel}
                 </span>
               )}
               {isHostView && isSavingRecording && (
@@ -106,16 +106,16 @@ export function StreamHeader({
               <img
                 src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${liveActor?.username ?? host?.username ?? 'streamer'}`}
                 alt={liveActor?.username ?? host?.username ?? 'Host'}
-                className="h-12 w-12 rounded-full border-2 border-white object-cover"
+                className="h-10 w-10 rounded-full border-2 border-white object-cover sm:h-11 sm:w-11"
               />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-black uppercase italic text-white sm:text-base">
+                  <p className="truncate text-xs font-black uppercase italic text-white sm:text-sm">
                     @{liveActor?.username ?? host?.username ?? 'live'}
                   </p>
                   <Shield size={14} className="text-brand-primary" />
                 </div>
-                <p className="truncate text-xs text-zinc-200">{stream?.title ?? 'Live Session'}</p>
+                <p className="truncate text-[11px] text-zinc-200 sm:text-xs">{stream?.title ?? 'Live Session'}</p>
               </div>
             </div>
           </div>

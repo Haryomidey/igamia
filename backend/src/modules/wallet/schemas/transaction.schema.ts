@@ -16,7 +16,7 @@ export class Transaction {
   amount: number;
 
   @Prop({ required: true })
-  currency: 'USD' | 'IGC';
+  currency: 'USD' | 'NGN' | 'IGC';
 
   @Prop({ default: 'completed' })
   status: 'pending' | 'completed' | 'failed';

@@ -1,17 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Settings, Edit3, Play, Trophy, Share2, List, CheckCircle2, Coins, Wallet } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Settings, Edit3, Play, Trophy, Share2, CheckCircle2, Coins, Wallet, ArrowRightLeft, Banknote, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { useWallet } from '../../../hooks/useWallet';
 import { usePledges } from '../../../hooks/usePledges';
+import { useToast } from '../../../components/ToastProvider';
 
 export default function Profile() {
   const { user } = useAuth();
-  const { walletData } = useWallet(true);
+  const { walletData, convertIgc, withdraw } = useWallet(true);
   const { fetchMyStats } = usePledges(false);
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState('wallet');
   const [competitiveProfile, setCompetitiveProfile] = useState<any>(null);
+  const [isConvertOpen, setIsConvertOpen] = useState(false);
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
+  const [convertAmount, setConvertAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const profileStats = useMemo(() => {
     return {
@@ -25,6 +32,48 @@ export default function Profile() {
     void fetchMyStats().then(setCompetitiveProfile).catch(() => setCompetitiveProfile(null));
   }, []);
 
+  const handleConvert = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(convertAmount);
+    if (!amount || amount <= 0) {
+      toast.warning('Enter a valid IGC amount.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await convertIgc(amount);
+      setConvertAmount('');
+      setIsConvertOpen(false);
+      toast.success('IGC converted to NGN.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to convert IGC.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleWithdraw = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const amount = Number(withdrawAmount);
+    if (!amount || amount <= 0) {
+      toast.warning('Enter a valid NGN amount.');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await withdraw(amount);
+      setWithdrawAmount('');
+      setIsWithdrawOpen(false);
+      toast.success('Withdrawal request submitted.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to withdraw.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (!user) {
     return (
       <div className="rounded-[3rem] border border-white/10 bg-white/5 px-8 py-16 text-center text-zinc-500">
@@ -34,7 +83,8 @@ export default function Profile() {
   }
 
   return (
-    <div className="space-y-12 pb-12">
+    <>
+      <div className="space-y-12 pb-12">
       <header className="relative">
         <div className="h-56 md:h-80 bg-gradient-to-r from-brand-deep to-brand-primary rounded-[3rem] overflow-hidden relative group">
           <img src="https://picsum.photos/seed/profile-banner/1920/600" alt="Banner" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition-transform duration-700" referrerPolicy="no-referrer" />
@@ -152,14 +202,36 @@ export default function Profile() {
           {activeTab === 'wallet' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
               <div className="bg-white/5 rounded-[2.5rem] border border-white/10 p-8 space-y-4">
-                <div className="flex items-center gap-3 text-brand-primary"><Wallet size={20} /><span className="text-[10px] font-black uppercase tracking-widest">USD Balance</span></div>
-                <p className="text-4xl font-black text-white italic">${walletData?.wallet.usdBalance.toFixed(2) ?? '0.00'}</p>
-                <p className="text-zinc-500 text-sm">Synced from your wallet hook.</p>
+                <div className="flex items-center gap-3 text-brand-primary"><Wallet size={20} /><span className="text-[10px] font-black uppercase tracking-widest">NGN Balance</span></div>
+                <p className="text-4xl font-black text-white italic">NGN {(walletData?.summary.fiatBalance ?? walletData?.wallet.usdBalance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className="text-zinc-500 text-sm">Withdrawable balance from gifts, deposits, and conversions.</p>
               </div>
               <div className="bg-white/5 rounded-[2.5rem] border border-white/10 p-8 space-y-4">
                 <div className="flex items-center gap-3 text-brand-accent"><Coins size={20} /><span className="text-[10px] font-black uppercase tracking-widest">IGC Balance</span></div>
                 <p className="text-4xl font-black text-white italic">{walletData?.wallet.igcBalance.toLocaleString() ?? '0'}</p>
-                <p className="text-zinc-500 text-sm">Mining, referrals, and watch rewards accumulate here.</p>
+                <p className="text-zinc-500 text-sm">Rate: 1 IGC = NGN {(walletData?.summary.igcToNgnRate ?? 10).toLocaleString()}.</p>
+              </div>
+              <div className="sm:col-span-2 bg-white/5 rounded-[2.5rem] border border-white/10 p-8 space-y-5">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Quick Wallet Actions</p>
+                    <p className="mt-2 text-sm text-zinc-400">Convert IGC to NGN here, then withdraw when you are ready.</p>
+                  </div>
+                  <p className="text-sm font-black text-white">Portfolio: NGN {(walletData?.summary.totalPortfolioNgn ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                </div>
+                <div className="flex flex-wrap gap-4">
+                  <button onClick={() => setIsConvertOpen(true)} className="inline-flex items-center gap-2 rounded-2xl bg-brand-primary px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white">
+                    <ArrowRightLeft size={16} />
+                    Convert IGC
+                  </button>
+                  <button onClick={() => setIsWithdrawOpen(true)} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white">
+                    <Banknote size={16} />
+                    Withdraw NGN
+                  </button>
+                  <Link to="/wallet" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-300">
+                    Open Wallet
+                  </Link>
+                </div>
               </div>
             </div>
           )}
@@ -176,7 +248,11 @@ export default function Profile() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-lg font-black text-white italic">{tx.currency === 'USD' ? '$' : ''}{tx.amount.toLocaleString()} {tx.currency === 'IGC' ? 'IGC' : ''}</p>
+                      <p className="text-lg font-black text-white italic">
+                        {tx.currency === 'IGC'
+                          ? `${tx.amount.toLocaleString()} IGC`
+                          : `${tx.currency} ${tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                      </p>
                       <span className="text-[10px] font-black uppercase tracking-[0.2em] px-5 py-2 rounded-xl border bg-brand-primary/10 text-brand-primary border-brand-primary/20">
                         {tx.status}
                       </span>
@@ -203,5 +279,34 @@ export default function Profile() {
         </div>
       </div>
     </div>
+    <AnimatePresence>
+      {isConvertOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
+          <motion.form initial={{ opacity: 0, scale: 0.94, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 16 }} onSubmit={handleConvert} className="w-full max-w-md rounded-[2.5rem] border border-white/10 bg-[#16122d] p-8">
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-xl font-black uppercase italic text-white">Convert IGC</h3>
+              <button type="button" onClick={() => setIsConvertOpen(false)} className="text-zinc-500 hover:text-white"><X size={20} /></button>
+            </div>
+            <p className="text-sm text-zinc-400">Convert IGC into NGN at the current default rate.</p>
+            <input type="number" min="1" step="0.01" value={convertAmount} onChange={(event) => setConvertAmount(event.target.value)} placeholder="Amount in IGC" className="mt-5 w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white outline-none" />
+            <button type="submit" disabled={isSubmitting} className="mt-5 w-full rounded-2xl bg-brand-primary py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50">{isSubmitting ? 'Processing...' : 'Convert to NGN'}</button>
+          </motion.form>
+        </div>
+      )}
+      {isWithdrawOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm">
+          <motion.form initial={{ opacity: 0, scale: 0.94, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.94, y: 16 }} onSubmit={handleWithdraw} className="w-full max-w-md rounded-[2.5rem] border border-white/10 bg-[#16122d] p-8">
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-xl font-black uppercase italic text-white">Withdraw NGN</h3>
+              <button type="button" onClick={() => setIsWithdrawOpen(false)} className="text-zinc-500 hover:text-white"><X size={20} /></button>
+            </div>
+            <p className="text-sm text-zinc-400">Submit a withdrawal request from your available NGN balance.</p>
+            <input type="number" min="1" step="0.01" value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} placeholder="Amount in NGN" className="mt-5 w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white outline-none" />
+            <button type="submit" disabled={isSubmitting} className="mt-5 w-full rounded-2xl bg-brand-primary py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50">{isSubmitting ? 'Processing...' : 'Confirm Withdrawal'}</button>
+          </motion.form>
+        </div>
+      )}
+    </AnimatePresence>
+    </>
   );
 }

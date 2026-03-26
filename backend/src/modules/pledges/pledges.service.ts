@@ -715,7 +715,22 @@ export class PledgesService implements OnModuleInit {
       },
     );
 
-    await this.closeAssociatedStream(refreshedMatch);
+    if (refreshedMatch.streamId) {
+      const normalizedStream = await this.streamsService.convertPledgeStreamToNormal(
+        refreshedMatch.streamId.toString(),
+      );
+      this.streamsGateway.emitParticipantUpdated(refreshedMatch.streamId.toString(), {
+        participants: normalizedStream.participants.map((participant) => ({
+          userId: participant.userId.toString(),
+          role: participant.role,
+          username: participant.username,
+          avatarUrl: participant.avatarUrl,
+          joinedAt: participant.joinedAt,
+        })),
+        orientation: normalizedStream.orientation,
+        mode: normalizedStream.mode,
+      });
+    }
 
     return {
       message: 'Result claim approved and match settled.',
