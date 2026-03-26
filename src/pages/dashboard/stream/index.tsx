@@ -38,6 +38,11 @@ type ActivityOverlay = {
   accent: 'gift' | 'join';
 };
 
+type LikeNotice = {
+  id: number;
+  message: string;
+};
+
 type StreamEndedOverlay = {
   hostUsername: string;
   countdownSeconds: number;
@@ -122,7 +127,7 @@ export default function LiveStream() {
     saveRecording,
     disconnect,
   } = useStream();
-  const { discoverUsers, sendRequest, fetchSocial } = useSocial(true);
+  const { discoverUsers, friends, sendRequest, fetchSocial } = useSocial(true);
   const { fetchMatch, submitResultClaim, respondToResultClaim } = usePledges(false);
   const toast = useToast();
 
@@ -142,7 +147,7 @@ export default function LiveStream() {
   const [audioTracks, setAudioTracks] = useState<Array<{ id: string; track: Track }>>([]);
   const [floatingHearts, setFloatingHearts] = useState<FloatingHeart[]>([]);
   const [activityOverlays, setActivityOverlays] = useState<ActivityOverlay[]>([]);
-  const [likeTicker, setLikeTicker] = useState<string | null>(null);
+  const [likeNotices, setLikeNotices] = useState<LikeNotice[]>([]);
   const [giftTicker, setGiftTicker] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [roomReconnectKey, setRoomReconnectKey] = useState(0);
@@ -213,6 +218,10 @@ export default function LiveStream() {
     const participantIds = new Set(stream?.participants.map((participant) => participant.userId) ?? []);
     return discoverUsers.filter((candidate) => !participantIds.has(candidate.id) && candidate.id !== user?._id);
   }, [discoverUsers, stream?.participants, user?._id]);
+  const isFollowingHost = useMemo(
+    () => Boolean(host?.userId && friends.some((friend) => friend.id === host.userId)),
+    [friends, host?.userId],
+  );
   const primaryTile = useMemo(
     () => videoTiles.find((tile) => tile.participantUserId === user?._id) ?? videoTiles[0] ?? null,
     [user?._id, videoTiles],
@@ -316,9 +325,10 @@ export default function LiveStream() {
     }
 
     const countLabel = recentLike.likerCount && recentLike.likerCount > 1 ? ` x${recentLike.likerCount}` : '';
-    setLikeTicker(`${recentLike.likedBy}${countLabel} liked`);
+    const id = Date.now() + Math.floor(Math.random() * 1000);
+    setLikeNotices((current) => [...current.slice(-7), { id, message: `${recentLike.likedBy}${countLabel}` }]);
     const timeout = window.setTimeout(() => {
-      setLikeTicker(null);
+      setLikeNotices((current) => current.filter((entry) => entry.id !== id));
     }, 1800);
 
     return () => window.clearTimeout(timeout);
@@ -395,7 +405,7 @@ export default function LiveStream() {
     setVideoTiles([]);
     setAudioTracks([]);
     setActivityOverlays([]);
-    setLikeTicker(null);
+    setLikeNotices([]);
     if (recentStreamStopped.redirectToDispute && isParticipantView && stream?.matchId) {
       navigate(`/disputes/${stream.matchId}`);
       return;
@@ -1257,6 +1267,21 @@ export default function LiveStream() {
           )}
         </AnimatePresence>
 
+        {isHostView && likeNotices.length > 0 && (
+          <div className="pointer-events-none absolute left-4 top-24 z-30 max-h-28 w-36 overflow-y-auto rounded-2xl border border-white/10 bg-black/30 px-2 py-2 backdrop-blur-md sm:left-6 sm:top-32 sm:w-40 lg:left-8">
+            <div className="space-y-1">
+              {likeNotices.map((notice) => (
+                <div
+                  key={notice.id}
+                  className="rounded-full bg-white/8 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-100"
+                >
+                  {notice.message}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="pointer-events-none absolute right-4 bottom-44 z-20 flex flex-col items-center gap-4 sm:right-6 lg:right-8">
           <div className="pointer-events-auto relative">
             <img
@@ -1264,7 +1289,7 @@ export default function LiveStream() {
               className="h-12 w-12 rounded-full border-2 border-white object-cover"
               alt={activeParticipant?.username ?? host?.username ?? 'avatar'}
             />
-            {!isHostView && !isCoStreamerView && !isInvitedPending && (
+            {!isHostView && !isCoStreamerView && !isInvitedPending && !isFollowingHost && (
               <button
                 onClick={(event) => {
                   event.stopPropagation();
@@ -1318,19 +1343,6 @@ export default function LiveStream() {
             {stream?.likesCount ?? 0}
           </div>
           </div>
-          <AnimatePresence>
-            {likeTicker && (
-              <motion.div
-                key={likeTicker}
-                initial={{ opacity: 0, x: 12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 12 }}
-                className="pointer-events-none absolute right-0 top-16 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-200 backdrop-blur-md sm:px-3 sm:py-1.5 sm:text-[9px]"
-              >
-                {likeTicker}
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         {isPledgeStream && isParticipantView && pledgeMatch && (

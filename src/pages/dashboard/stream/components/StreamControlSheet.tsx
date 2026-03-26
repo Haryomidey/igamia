@@ -121,7 +121,7 @@ export function StreamControlSheet({
             </div>
 
             {canControlLive && (
-              <div className="grid grid-cols-4 gap-4">
+              <div className={`grid gap-4 ${isHostView && !isPledgeStream ? 'grid-cols-5' : 'grid-cols-4'}`}>
                 <ControlButton
                   icon={isMicMuted ? MicOff : Mic}
                   label={isMicMuted ? 'Unmute' : 'Mute'}
@@ -140,9 +140,10 @@ export function StreamControlSheet({
                   active={isRecording}
                   onClick={onToggleRecording}
                 />
-                {!isPledgeStream && isHostView ? (
+                {isHostView && !isPledgeStream && (
                   <ControlButton icon={UserPlus} label="Invite" onClick={onOpenInviteModal} />
-                ) : isCoStreamerView ? (
+                )}
+                {isCoStreamerView ? (
                   <ControlButton icon={LogOut} label="Leave" danger onClick={onLeaveLive} />
                 ) : (
                   <ControlButton icon={Radio} label="End" danger onClick={onStopStream} />
