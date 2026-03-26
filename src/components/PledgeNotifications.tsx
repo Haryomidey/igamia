@@ -98,11 +98,16 @@ function formatNotificationTime(value: string) {
 export function PledgeNotificationsProvider({ children }: { children: React.ReactNode }) {
   const pledgeSocketRef = useRef<Socket | null>(null);
   const streamSocketRef = useRef<Socket | null>(null);
+  const userIdRef = useRef<string | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const [activeNotification, setActiveNotification] = useState<DashboardNotification | null>(null);
+
+  useEffect(() => {
+    userIdRef.current = user?._id ?? null;
+  }, [user?._id]);
 
   useEffect(() => {
     const token = getAccessToken();
@@ -152,7 +157,7 @@ export function PledgeNotificationsProvider({ children }: { children: React.Reac
       outcome: 'win' | 'loss' | 'draw';
       note?: string;
     }) => {
-      const canRespond = payload.claimedByUserId !== user?._id;
+      const canRespond = payload.claimedByUserId !== userIdRef.current;
       const nextNotification: PledgeResultClaimNotification = {
         ...payload,
         id: `claim:${payload.matchId}:${Date.now()}`,
@@ -267,7 +272,7 @@ export function PledgeNotificationsProvider({ children }: { children: React.Reac
       pledgeSocketRef.current = null;
       streamSocketRef.current = null;
     };
-  }, [navigate, toast, user?._id]);
+  }, [navigate, toast]);
 
   const markAsRead = (notificationId: string) => {
     setNotifications((prev) =>

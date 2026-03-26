@@ -43,6 +43,18 @@ export class User {
 
   @Prop({ default: '' })
   bio: string;
+
+  @Prop({ default: '' })
+  location: string;
+
+  @Prop({ type: Number, default: null })
+  age?: number | null;
+
+  @Prop({ type: [String], default: [] })
+  gameInterests: string[];
+
+  @Prop({ default: false })
+  onboardingCompleted: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

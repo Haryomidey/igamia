@@ -19,6 +19,7 @@ import SignupPage from './pages/auth/signup';
 import ForgotPasswordPage from './pages/auth/forgot-password';
 import ResetPasswordPage from './pages/auth/reset-password';
 import OtpPage from './pages/auth/otp';
+import PersonalizePage from './pages/auth/personalize';
 import TokenPage from './pages/dashboard/token';
 import FAQ from './pages/dashboard/faq';
 import Leaderboard from './pages/dashboard/leaderboard';
@@ -38,6 +39,7 @@ export default function App() {
       <Route path="/verify" element={<OtpPage />} />
       
       <Route element={<ProtectedRoute />}>
+        <Route path="/personalize" element={<PersonalizePage />} />
         <Route path="/play" element={<GamePlay />} />
         <Route path="/stream" element={<LiveStream />} />
 

@@ -8,6 +8,7 @@ import { InviteStreamerDto } from './dto/invite-streamer.dto';
 import { CommentStreamDto } from './dto/comment-stream.dto';
 import { BlockUserDto } from './dto/block-user.dto';
 import { SendStreamGiftDto } from './dto/send-stream-gift.dto';
+import { UpdateStreamLayoutDto } from './dto/update-stream-layout.dto';
 
 @Controller('streams')
 export class StreamsController {
@@ -121,6 +122,22 @@ export class StreamsController {
     this.streamsGateway.server.to(streamId).emit('streamShared', {
       streamId,
       sharesCount: result.sharesCount,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/layout')
+  async updateStreamLayout(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+    @Body() dto: UpdateStreamLayoutDto,
+  ) {
+    const result = await this.streamsService.updateStreamLayout(streamId, user.sub, dto);
+    this.streamsGateway.server.to(streamId).emit('streamParticipantUpdated', {
+      streamId,
+      participants: result.stream.participants,
+      orientation: result.stream.orientation,
     });
     return result;
   }

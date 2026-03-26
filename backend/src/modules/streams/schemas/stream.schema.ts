@@ -40,6 +40,9 @@ export class Stream {
   @Prop({ default: 'normal', enum: ['normal', 'pledge'] })
   mode: 'normal' | 'pledge';
 
+  @Prop({ default: 'vertical', enum: ['vertical', 'horizontal', 'pip'] })
+  orientation: 'vertical' | 'horizontal' | 'pip';
+
   @Prop({ type: Types.ObjectId, ref: Match.name })
   matchId?: Types.ObjectId;
 

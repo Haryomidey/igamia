@@ -8,6 +8,7 @@ export type Stream = {
   title: string;
   description: string;
   category: string;
+  orientation: 'vertical' | 'horizontal' | 'pip';
   mode: 'normal' | 'pledge';
   matchId?: string;
   status: 'live' | 'ended';
@@ -72,6 +73,7 @@ export type StreamParticipantRemovedEvent = {
 export type StreamParticipantUpdatedEvent = {
   streamId: string;
   participants: Stream['participants'];
+  orientation?: Stream['orientation'];
 };
 
 export type StreamMediaStateEvent = {
@@ -157,7 +159,15 @@ export function useStream() {
     });
 
     socketRef.current.on('streamParticipantUpdated', (payload: StreamParticipantUpdatedEvent) => {
-      setStream((prev) => (prev ? { ...prev, participants: payload.participants } : prev));
+      setStream((prev) =>
+        prev
+          ? {
+              ...prev,
+              participants: payload.participants,
+              orientation: payload.orientation ?? prev.orientation,
+            }
+          : prev,
+      );
       setRecentParticipantUpdated(payload);
     });
 
@@ -220,6 +230,7 @@ export function useStream() {
     title: string;
     description?: string;
     category?: string;
+    orientation?: Stream['orientation'];
   }) => {
     const { data } = await api.post<Stream>('/streams/start', payload);
     setStream(data);
@@ -240,6 +251,16 @@ export function useStream() {
   const removeParticipant = async (streamId: string, participantUserId: string) =>
     api.post(`/streams/${streamId}/remove-participant`, { participantUserId });
   const leaveStreamParticipation = async (streamId: string) => api.post(`/streams/${streamId}/leave`);
+  const updateStreamLayout = async (
+    streamId: string,
+    orientation: Stream['orientation'],
+  ) => {
+    const { data } = await api.post<{ message: string; stream: Stream }>(`/streams/${streamId}/layout`, {
+      orientation,
+    });
+    setStream((prev) => (prev ? { ...prev, ...(data.stream ?? {}) } : data.stream));
+    return data;
+  };
   const giftStream = async (
     streamId: string,
     payload: { amount: number; description: string },
@@ -313,6 +334,7 @@ export function useStream() {
     blockViewer,
     removeParticipant,
     leaveStreamParticipation,
+    updateStreamLayout,
     giftStream,
     updateMediaState,
     getConnectionDetails,

@@ -37,7 +37,7 @@ function renderTaggedMessage(message: string) {
 export function StreamCommentStack({ comments }: { comments: StreamCommentEntry[] }) {
   return (
     <div
-      className="max-h-40 w-full space-y-1.5 overflow-y-auto pr-1 sm:max-h-52"
+      className="max-h-44 w-full space-y-1 overflow-y-auto pr-1 sm:max-h-52"
       style={{ scrollbarGutter: 'stable' }}
     >
       {comments.map((comment, index) => (
@@ -45,20 +45,20 @@ export function StreamCommentStack({ comments }: { comments: StreamCommentEntry[
           key={comment.id}
           initial={index > comments.length - 4 ? { opacity: 0, y: 12 } : false}
           animate={{ opacity: 1, y: 0 }}
-          className={`rounded-[1.15rem] border px-3 py-2 text-xs shadow-lg backdrop-blur-md ${
+          className={`max-w-[85%] rounded-2xl border px-3 py-1 text-[11px] shadow-lg backdrop-blur-md ${
             comment.type === 'description'
-              ? 'border-brand-accent/20 bg-brand-accent/10'
-              : 'border-white/10 bg-black/35'
+              ? 'border-yellow-500/30 bg-yellow-500/20'
+              : 'border-white/5 bg-black/40'
           }`}
         >
           <span
-            className={`mr-2 text-[9px] font-black uppercase tracking-[0.16em] ${
-              comment.type === 'description' ? 'text-brand-accent' : 'text-brand-primary'
+            className={`mb-0.5 block text-[10px] font-bold ${
+              comment.type === 'description' ? 'text-yellow-400' : 'text-white/60'
             }`}
           >
             {comment.username}
           </span>
-          <span className="text-[11px] text-zinc-100">{renderTaggedMessage(comment.message)}</span>
+          <span className="text-[11px] leading-tight text-zinc-100">{renderTaggedMessage(comment.message)}</span>
         </motion.div>
       ))}
     </div>

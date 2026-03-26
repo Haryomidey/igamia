@@ -7,6 +7,7 @@ type StartForm = {
   title: string;
   description: string;
   category: string;
+  orientation: 'vertical' | 'horizontal' | 'pip';
 };
 
 export function StartStreamModal({
@@ -52,6 +53,22 @@ export function StartStreamModal({
                 placeholder="Category"
                 className="w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white focus:border-brand-primary/50 focus:outline-none"
               />
+              <div className="grid grid-cols-3 gap-3">
+                {(['vertical', 'horizontal', 'pip'] as const).map((orientation) => (
+                  <button
+                    key={orientation}
+                    type="button"
+                    onClick={() => onChange('orientation', orientation)}
+                    className={`rounded-2xl px-4 py-3 text-[9px] font-black uppercase tracking-[0.16em] transition-all sm:text-[10px] sm:tracking-[0.2em] ${
+                      form.orientation === orientation
+                        ? 'bg-brand-primary text-white'
+                        : 'border border-white/10 bg-black/30 text-zinc-300'
+                    }`}
+                  >
+                    {orientation === 'pip' ? 'PiP' : orientation}
+                  </button>
+                ))}
+              </div>
               <textarea
                 value={form.description}
                 onChange={(event) => onChange('description', event.target.value)}

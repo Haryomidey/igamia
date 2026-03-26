@@ -58,52 +58,72 @@ function LiveVideoSurface({
   );
 }
 
-function tileLayoutClass(count: number, index: number) {
-  if (count <= 1) {
-    return 'col-span-2 row-span-2';
-  }
-
-  if (count === 2) {
-    return 'col-span-2 row-span-1 sm:col-span-1 sm:row-span-2';
-  }
-
-  if (count === 3) {
-    return index === 0
-      ? 'col-span-2 row-span-1 sm:col-span-1 sm:row-span-2'
-      : 'col-span-1 row-span-1';
-  }
-
-  return 'col-span-1 row-span-1';
-}
-
 function truncateLabel(value: string, maxLength = 18) {
   return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+}
+
+function tileLayoutClass(count: number, index: number, orientation: Stream['orientation']) {
+  if (count <= 1) {
+    return 'h-full w-full';
+  }
+
+  if (orientation === 'horizontal') {
+    if (count === 2) return 'h-full w-1/2';
+    if (count === 3) return index < 2 ? 'h-full w-1/3' : 'h-1/2 w-full';
+    return 'h-1/2 w-1/2';
+  }
+
+  if (count === 2) return 'h-1/2 w-full';
+  if (count === 3) return index < 2 ? 'h-1/2 w-1/2' : 'h-1/2 w-full';
+  return 'h-1/2 w-1/2';
+}
+
+function sortStageParticipants(
+  participants: Stream['participants'],
+  activeParticipantUserId?: string,
+) {
+  if (!activeParticipantUserId) {
+    return participants;
+  }
+
+  const active = participants.find((participant) => participant.userId === activeParticipantUserId);
+  const others = participants.filter((participant) => participant.userId !== activeParticipantUserId);
+  return active ? [active, ...others] : participants;
 }
 
 export function StreamStageGrid({
   participants,
   videoTiles,
   mediaStates,
+  orientation,
+  activeParticipantUserId,
   canRemoveParticipants,
   currentUserId,
   heroImage,
   onRemoveParticipant,
+  onSelectParticipant,
   onVideoElementChange,
 }: {
   participants: Stream['participants'];
   videoTiles: VideoTile[];
   mediaStates: Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>;
+  orientation: Stream['orientation'];
+  activeParticipantUserId?: string;
   canRemoveParticipants: boolean;
   currentUserId?: string;
   heroImage: string;
   onRemoveParticipant: (participantUserId: string, participantUsername: string) => void;
+  onSelectParticipant?: (participantUserId: string) => void;
   onVideoElementChange?: (participantUserId: string, element: HTMLVideoElement | null) => void;
 }) {
-  const stageParticipants = participants.filter((participant) => participant.role !== 'invited').slice(0, 4);
+  const stageParticipants = sortStageParticipants(
+    participants.filter((participant) => participant.role !== 'invited').slice(0, 4),
+    activeParticipantUserId,
+  );
   const total = Math.max(stageParticipants.length, 1);
 
   return (
-    <div className="absolute inset-0 grid grid-cols-2 grid-rows-[minmax(0,1.25fr)_minmax(0,0.85fr)] gap-1 bg-black p-1 pt-24 pb-40 sm:grid-rows-2 sm:gap-2 sm:p-2 sm:pt-28 sm:pb-28">
+    <div className="absolute inset-0 overflow-hidden bg-black">
       {stageParticipants.map((participant, index) => {
         const tile = videoTiles.find((entry) => entry.participantUserId === participant.userId);
         const state = mediaStates[participant.userId];
@@ -111,33 +131,60 @@ export function StreamStageGrid({
         const muted = Boolean(state?.isMuted);
         const showPlaceholder = cameraOff || !tile;
         const isCurrentUserTile = participant.userId === currentUserId;
+        const isSelected = stageParticipants[0]?.userId === participant.userId;
+        const isPipOverlay = orientation === 'pip' && index > 0;
 
         return (
           <div
             key={participant.userId}
-            className={`relative min-h-0 overflow-hidden rounded-[1.25rem] bg-black sm:rounded-[1.5rem] ${tileLayoutClass(total, index)}`}
+            onClick={() => onSelectParticipant?.(participant.userId)}
+            className={`absolute overflow-hidden border border-white/5 bg-black transition-all duration-500 ${
+              isPipOverlay
+                ? 'right-4 z-30 h-36 w-24 rounded-2xl shadow-2xl'
+                : 'inset-0'
+            } ${
+              !isPipOverlay ? tileLayoutClass(total, index, orientation) : ''
+            } ${
+              orientation === 'vertical' && !isPipOverlay
+                ? index === 0
+                  ? 'left-0 top-0'
+                  : index === 1
+                    ? 'bottom-0 left-0'
+                    : index === 2
+                      ? 'bottom-0 right-0'
+                      : 'right-0 top-0'
+                : ''
+            } ${
+              orientation === 'horizontal' && !isPipOverlay
+                ? index === 0
+                  ? 'left-0 top-0'
+                  : index === 1
+                    ? 'right-0 top-0'
+                    : index === 2
+                      ? 'bottom-0 left-0'
+                      : 'bottom-0 right-0'
+                : ''
+            } ${
+              isPipOverlay ? '' : total <= 1 ? 'h-full w-full' : ''
+            } ${
+              isSelected ? 'ring-2 ring-white/30' : 'opacity-95'
+            }`}
+            style={
+              isPipOverlay
+                ? { top: `${5 + (index - 1) * 9.5}rem` }
+                : undefined
+            }
           >
-            {participant.role !== 'host' && (
-              <div className="absolute inset-x-0 top-0 z-10 flex justify-start p-2 sm:p-4">
-                <div
-                  title={participant.username}
-                  className="max-w-[75%] truncate rounded-full border border-white/10 bg-black/45 px-2 py-0.5 text-[7px] font-black uppercase tracking-[0.12em] text-white backdrop-blur-md sm:px-3 sm:py-1.5 sm:text-[10px] sm:tracking-[0.18em]"
-                >
-                  {truncateLabel(participant.username)}
-                </div>
-              </div>
-            )}
-
             {showPlaceholder ? (
               <div className="relative h-full w-full">
                 <img
                   src={heroImage}
                   alt={participant.username}
-                  className="h-full w-full object-cover opacity-35 blur-[2px]"
+                  className="h-full w-full object-cover opacity-45"
                 />
-                <div className="absolute inset-0 bg-linear-to-t from-black via-black/65 to-black/45" />
+                <div className="absolute inset-0 bg-linear-to-t from-black via-black/60 to-black/35" />
                 <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
-                  <VideoOff size={20} className="text-brand-accent sm:size-6" />
+                  <VideoOff size={20} className="text-white/80 sm:size-6" />
                   <p className="mt-2 text-[10px] font-black uppercase italic text-white sm:mt-4 sm:text-lg">
                     {participant.username}
                   </p>
@@ -164,9 +211,16 @@ export function StreamStageGrid({
 
             <div className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-black/35" />
 
-            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-2 sm:p-4">
-              <div className="max-w-[70%] truncate rounded-full border border-white/10 bg-black/35 px-2 py-0.5 text-[7px] font-black uppercase tracking-[0.12em] text-white backdrop-blur-md sm:px-3 sm:py-1.5 sm:text-[10px] sm:tracking-[0.18em]">
-                {truncateLabel(participant.username)}
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 p-3 sm:p-4">
+              <div className="max-w-[72%] space-y-1">
+                <div className="w-fit max-w-full truncate rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.14em] text-white backdrop-blur-md sm:px-3 sm:text-[10px] sm:tracking-[0.18em]">
+                  {truncateLabel(participant.username)}
+                </div>
+                {!isPipOverlay && (
+                  <div className="w-fit rounded-full border border-white/10 bg-black/35 px-2 py-0.5 text-[7px] font-bold uppercase tracking-[0.12em] text-zinc-200 backdrop-blur-md sm:text-[9px]">
+                    {participant.role === 'host' ? 'Host' : 'Guest'}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1.5 sm:gap-2">
                 {muted && (
@@ -197,7 +251,7 @@ export function StreamStageGrid({
       })}
 
       {!stageParticipants.length && (
-        <div className="col-span-2 row-span-2 overflow-hidden rounded-[1.75rem] bg-black">
+        <div className="h-full w-full overflow-hidden bg-black">
           <img src={heroImage} alt="Live stage" className="h-full w-full object-cover opacity-40" />
           <div className="absolute inset-0 bg-linear-to-t from-black via-black/40 to-black/30" />
         </div>

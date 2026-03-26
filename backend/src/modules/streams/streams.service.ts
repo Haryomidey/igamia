@@ -22,6 +22,7 @@ import { GiftDto } from '../wallet/dto/gift.dto';
 import { SendStreamGiftDto } from './dto/send-stream-gift.dto';
 import { SocialService } from '../social/social.service';
 import { MediaService } from '../media/media.service';
+import { UpdateStreamLayoutDto } from './dto/update-stream-layout.dto';
 
 @Injectable()
 export class StreamsService {
@@ -181,12 +182,17 @@ export class StreamsService {
       ? dto.description.trim().slice(0, 220)
       : `Welcome to ${username} stream, please like, comment and support creator and be respectful.`;
     const category = dto.category?.trim() ? dto.category.trim().slice(0, 60) : 'General';
+    const orientation =
+      dto.orientation === 'horizontal' || dto.orientation === 'pip'
+        ? dto.orientation
+        : 'vertical';
 
     const stream = await this.streamModel.create({
       hostUserId: this.objectId(userId),
       title,
       description,
       category,
+      orientation,
       mode: 'normal',
       status: 'live',
       participants: [
@@ -234,6 +240,7 @@ export class StreamsService {
       title: match.title,
       description: `${match.gameTitle} pledge match is now live.`,
       category: match.gameTitle,
+      orientation: 'horizontal',
       mode: 'pledge',
       matchId: this.objectId(match._id.toString()),
       status: 'live',
@@ -505,6 +512,18 @@ export class StreamsService {
       removedUserId: participantUserId,
       removedUsername: targetParticipant.username,
       reason: 'removed',
+      stream: stream.toObject(),
+    };
+  }
+
+  async updateStreamLayout(streamId: string, userId: string, dto: UpdateStreamLayoutDto) {
+    const stream = await this.requireStream(streamId);
+    this.ensureHost(stream, userId);
+    stream.orientation = dto.orientation;
+    await stream.save();
+
+    return {
+      message: 'Stream layout updated',
       stream: stream.toObject(),
     };
   }

@@ -2,11 +2,12 @@ import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { getAccessToken } from '../api/axios';
 import { useAuth } from '../hooks/useAuth';
+import { needsOnboarding } from '../lib/profile';
 import { PledgeNotificationsProvider } from './PledgeNotifications';
 
 export function ProtectedRoute() {
   const location = useLocation();
-  const { loading, isAuthenticated } = useAuth();
+  const { loading, isAuthenticated, user } = useAuth();
   const hasToken = Boolean(getAccessToken());
 
   if (loading && hasToken) {
@@ -21,6 +22,10 @@ export function ProtectedRoute() {
 
   if (!hasToken || !isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location }} />;
+  }
+
+  if (location.pathname !== '/personalize' && needsOnboarding(user)) {
+    return <Navigate to="/personalize" replace />;
   }
 
   return (

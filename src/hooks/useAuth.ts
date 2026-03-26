@@ -10,6 +10,10 @@ export type AuthUser = {
   referralCode: string;
   avatarUrl: string;
   bio: string;
+  location: string;
+  age?: number | null;
+  gameInterests: string[];
+  onboardingCompleted: boolean;
 };
 
 type AuthResponse = {
@@ -23,6 +27,19 @@ type RegisterPayload = {
   username: string;
   password: string;
   referralCode?: string;
+};
+
+type UpdateProfilePayload = {
+  location?: string;
+  age?: number;
+  gameInterests?: string[];
+};
+
+type UsernameAvailabilityResponse = {
+  available: boolean;
+  normalizedUsername: string;
+  suggestions: string[];
+  reason?: string;
 };
 
 export function useAuth() {
@@ -173,6 +190,30 @@ export function useAuth() {
     setUser(null);
   };
 
+  const updateProfile = async (payload: UpdateProfilePayload) => {
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const { data } = await api.patch<AuthUser>('/users/me', payload);
+      setUser(data);
+      return data;
+    } catch (err: any) {
+      const message = getApiErrorMessage(err, 'Unable to update your profile');
+      setError(message);
+      throw err;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const checkUsernameAvailability = async (username: string) => {
+    const { data } = await api.get<UsernameAvailabilityResponse>('/users/username-availability', {
+      params: { username },
+    });
+    return data;
+  };
+
   return {
     user,
     loading,
@@ -186,6 +227,8 @@ export function useAuth() {
     resendVerification,
     forgotPassword,
     resetPassword,
+    updateProfile,
+    checkUsernameAvailability,
     logout,
   };
 }

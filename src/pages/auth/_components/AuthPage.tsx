@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Eye, EyeOff, Gamepad2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useToast } from '../../../components/ToastProvider';
 import { useAuth } from '../../../hooks/useAuth';
+import { needsOnboarding } from '../../../lib/profile';
 
 interface AuthProps {
   mode: 'login' | 'signup' | 'verify' | 'forgot-password' | 'reset-password';
@@ -46,6 +47,17 @@ export default function Auth({ mode }: AuthProps) {
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
+  const [usernameStatus, setUsernameStatus] = useState<{
+    state: 'idle' | 'checking' | 'available' | 'unavailable';
+    message: string;
+    suggestions: string[];
+    normalizedUsername?: string;
+  }>({
+    state: 'idle',
+    message: '',
+    suggestions: [],
+  });
+  const usernameRequestRef = useRef(0);
 
   const verificationEmail = useMemo(() => {
     if (mode === 'signup') {
@@ -56,6 +68,83 @@ export default function Auth({ mode }: AuthProps) {
   }, [forgotEmail, locationState?.email, loginForm.identifier, mode, signupForm.email]);
 
   const redirectAfterAuth = locationState?.from?.pathname || '/home';
+
+  const signupValidation = useMemo(() => {
+    const fullName = signupForm.fullName.trim();
+    const email = signupForm.email.trim();
+    const username = signupForm.username.trim();
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    const usernameValid = /^[a-zA-Z0-9_]{3,20}$/.test(username);
+    const passwordValid = signupForm.password.length >= 6;
+
+    return {
+      fullNameValid: fullName.length >= 2,
+      emailValid,
+      usernameValid,
+      passwordValid,
+      canSubmit:
+        fullName.length >= 2 &&
+        emailValid &&
+        usernameValid &&
+        passwordValid &&
+        usernameStatus.state === 'available',
+    };
+  }, [signupForm, usernameStatus.state]);
+
+  const handleUsernameChange = async (value: string) => {
+    const requestId = Date.now();
+    usernameRequestRef.current = requestId;
+    setSignupForm((current) => ({ ...current, username: value }));
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+      setUsernameStatus({ state: 'idle', message: '', suggestions: [] });
+      return;
+    }
+
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(trimmed)) {
+      setUsernameStatus({
+        state: 'unavailable',
+        message: 'Use 3-20 letters, numbers, or underscores.',
+        suggestions: [],
+      });
+      return;
+    }
+
+    setUsernameStatus({
+      state: 'checking',
+      message: 'Checking username...',
+      suggestions: [],
+    });
+
+    try {
+      const result = await auth.checkUsernameAvailability(trimmed);
+      if (usernameRequestRef.current !== requestId) {
+        return;
+      }
+      setUsernameStatus({
+        state: result.available ? 'available' : 'unavailable',
+        message: result.available
+          ? `${result.normalizedUsername} is available.`
+          : result.reason || `${result.normalizedUsername} is already taken.`,
+        suggestions: result.suggestions,
+        normalizedUsername: result.normalizedUsername,
+      });
+
+      if (result.available && result.normalizedUsername !== trimmed) {
+        setSignupForm((current) => ({ ...current, username: result.normalizedUsername }));
+      }
+    } catch {
+      if (usernameRequestRef.current !== requestId) {
+        return;
+      }
+      setUsernameStatus({
+        state: 'unavailable',
+        message: 'Unable to verify username right now.',
+        suggestions: [],
+      });
+    }
+  };
 
   const handleOtpChange = (index: number, value: string) => {
     const sanitizedValue = value.replace(/\D/g, '');
@@ -155,6 +244,31 @@ export default function Auth({ mode }: AuthProps) {
   const handleSignup = async (event: React.FormEvent) => {
     event.preventDefault();
 
+    if (!signupValidation.fullNameValid) {
+      toast.warning('Enter your full name.');
+      return;
+    }
+
+    if (!signupValidation.emailValid) {
+      toast.warning('Enter a valid email address.');
+      return;
+    }
+
+    if (!signupValidation.usernameValid) {
+      toast.warning('Username must be 3-20 characters using letters, numbers, or underscores.');
+      return;
+    }
+
+    if (usernameStatus.state !== 'available') {
+      toast.warning('Choose an available username before continuing.');
+      return;
+    }
+
+    if (!signupValidation.passwordValid) {
+      toast.warning('Password must be at least 6 characters.');
+      return;
+    }
+
     try {
       await auth.register({
         fullName: signupForm.fullName.trim(),
@@ -166,7 +280,7 @@ export default function Auth({ mode }: AuthProps) {
 
       // Temporary direct-signup flow. Send users to /verify again when OTP is restored.
       toast.success('Account created successfully.');
-      navigate('/home', { replace: true });
+      navigate('/personalize', { replace: true });
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to create your account.');
     }
@@ -176,13 +290,13 @@ export default function Auth({ mode }: AuthProps) {
     event.preventDefault();
 
     try {
-      await auth.login({
+      const result = await auth.login({
         email: loginForm.identifier.trim(),
         password: loginForm.password,
       });
 
       toast.success('Logged in successfully.');
-      navigate(redirectAfterAuth, { replace: true });
+      navigate(needsOnboarding(result.user) ? '/personalize' : redirectAfterAuth, { replace: true });
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to log in.');
     }
@@ -203,13 +317,13 @@ export default function Auth({ mode }: AuthProps) {
     }
 
     try {
-      await auth.verifyEmail({
+      const result = await auth.verifyEmail({
         email: verificationEmail.trim(),
         otp,
       });
 
       toast.success('Email verified successfully.');
-      navigate('/home', { replace: true });
+      navigate(needsOnboarding(result.user) ? '/personalize' : '/home', { replace: true });
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to verify code.');
     }
@@ -275,6 +389,9 @@ export default function Auth({ mode }: AuthProps) {
                   placeholder="Alex Johnson"
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
                 />
+                {!signupValidation.fullNameValid && signupForm.fullName.length > 0 && (
+                  <p className="px-1 text-[11px] text-rose-300">Please enter at least 2 characters.</p>
+                )}
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Email Address</label>
@@ -286,6 +403,9 @@ export default function Auth({ mode }: AuthProps) {
                   placeholder="alex@example.com"
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
                 />
+                {!signupValidation.emailValid && signupForm.email.length > 0 && (
+                  <p className="px-1 text-[11px] text-rose-300">Enter a valid email address.</p>
+                )}
               </div>
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest ml-1">Username</label>
@@ -293,10 +413,31 @@ export default function Auth({ mode }: AuthProps) {
                   type="text"
                   required
                   value={signupForm.username}
-                  onChange={(e) => setSignupForm((current) => ({ ...current, username: e.target.value }))}
+                  onChange={(e) => void handleUsernameChange(e.target.value)}
                   placeholder="alexgamer"
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-4 text-white focus:outline-none focus:border-brand-primary/50 transition-colors"
                 />
+                {usernameStatus.message && (
+                  <p className={`px-1 text-[11px] ${
+                    usernameStatus.state === 'available' ? 'text-emerald-300' : 'text-zinc-400'
+                  }`}>
+                    {usernameStatus.message}
+                  </p>
+                )}
+                {usernameStatus.suggestions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 px-1 pt-1">
+                    {usernameStatus.suggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => void handleUsernameChange(suggestion)}
+                        className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-white transition-colors hover:bg-white/10"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               {renderPasswordField({
                 id: 'signup-password',
@@ -319,7 +460,7 @@ export default function Auth({ mode }: AuthProps) {
               </div>
               <button
                 type="submit"
-                disabled={auth.submitting}
+                disabled={auth.submitting || !signupValidation.canSubmit}
                 className="w-full bg-brand-primary text-white py-4 rounded-2xl font-bold uppercase tracking-widest text-xs hover:bg-brand-accent hover:text-black transition-all shadow-lg shadow-brand-primary/20 disabled:opacity-50"
               >
                 {auth.submitting ? 'Creating Account...' : 'Sign Up'}

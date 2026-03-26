@@ -11,4 +11,8 @@ export class StartStreamDto {
   @IsOptional()
   @IsString()
   category?: string;
+
+  @IsOptional()
+  @IsString()
+  orientation?: 'vertical' | 'horizontal' | 'pip';
 }

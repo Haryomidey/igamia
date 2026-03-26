@@ -7,6 +7,8 @@ import {
   ChevronUp,
   Gift,
   Heart,
+  Plus,
+  Share2,
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/useAuth';
 import { useStream } from '../../../hooks/useStream';
@@ -21,6 +23,7 @@ import {
   GiftModal,
   InvitePlayersModal,
 } from './components/StreamModals';
+import { StreamControlSheet } from './components/StreamControlSheet';
 
 type FloatingHeart = {
   id: number;
@@ -112,6 +115,7 @@ export default function LiveStream() {
     acceptInvite,
     removeParticipant,
     leaveStreamParticipation,
+    updateStreamLayout,
     stopStream,
     startStream,
     getConnectionDetails,
@@ -126,6 +130,8 @@ export default function LiveStream() {
   const [isGifting, setIsGifting] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [showControlSheet, setShowControlSheet] = useState(false);
+  const [selectedParticipantUserId, setSelectedParticipantUserId] = useState<string | null>(null);
   const [giftAmount, setGiftAmount] = useState('10');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -149,6 +155,7 @@ export default function LiveStream() {
     title: '',
     description: '',
     category: 'General',
+    orientation: 'vertical' as 'vertical' | 'horizontal' | 'pip',
   });
   const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const livekitRoomRef = useRef<Room | null>(null);
@@ -173,6 +180,10 @@ export default function LiveStream() {
     : -1;
   const host = stream?.participants.find((participant) => participant.role === 'host') ?? stream?.participants[0];
   const currentParticipant = stream?.participants.find((participant) => participant.userId === user?._id);
+  const activeParticipant =
+    stream?.participants.find((participant) => participant.userId === selectedParticipantUserId) ??
+    currentParticipant ??
+    host;
   const isHostView = Boolean(user?._id && stream?.hostUserId === user._id);
   const isPledgeStream = stream?.mode === 'pledge';
   const isParticipantView = currentParticipant?.role === 'host' || currentParticipant?.role === 'guest';
@@ -207,6 +218,20 @@ export default function LiveStream() {
     [user?._id, videoTiles],
   );
   const isStreamEndedForViewer = Boolean(streamEndedOverlay && !isHostView);
+
+  useEffect(() => {
+    if (!stream?.participants?.length) {
+      setSelectedParticipantUserId(null);
+      return;
+    }
+
+    const stillExists = stream.participants.some((participant) => participant.userId === selectedParticipantUserId);
+    if (selectedParticipantUserId && stillExists) {
+      return;
+    }
+
+    setSelectedParticipantUserId(currentParticipant?.userId ?? host?.userId ?? stream.participants[0]?.userId ?? null);
+  }, [currentParticipant?.userId, host?.userId, selectedParticipantUserId, stream?.participants]);
   useEffect(() => {
     if (!resolvedStreamId) {
       return;
@@ -1007,6 +1032,7 @@ export default function LiveStream() {
         title: startForm.title.trim(),
         description: startForm.description.trim(),
         category: startForm.category.trim(),
+        orientation: startForm.orientation,
       });
       setIsStarting(false);
       navigate(`/stream?streamId=${started._id}`, { replace: true });
@@ -1022,6 +1048,19 @@ export default function LiveStream() {
     value: string,
   ) => {
     setStartForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleChangeOrientation = async (orientation: 'vertical' | 'horizontal' | 'pip') => {
+    if (!resolvedStreamId || !isHostView) {
+      return;
+    }
+
+    try {
+      await updateStreamLayout(resolvedStreamId, orientation);
+      toast.success(`Layout switched to ${orientation.toUpperCase()}.`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to update stream layout.');
+    }
   };
 
   const navigateToRelativeStream = (direction: 'previous' | 'next') => {
@@ -1108,9 +1147,12 @@ export default function LiveStream() {
           participants={stream?.participants ?? []}
           videoTiles={videoTiles}
           mediaStates={mediaStates}
+          orientation={stream?.orientation ?? 'vertical'}
+          activeParticipantUserId={activeParticipant?.userId}
           canRemoveParticipants={canRemoveParticipants}
           currentUserId={user?._id}
           heroImage={heroImage}
+          onSelectParticipant={(participantUserId) => setSelectedParticipantUserId(participantUserId)}
           onVideoElementChange={handleStageVideoElementChange}
           onRemoveParticipant={(participantUserId, participantUsername) => {
             void handleRemoveParticipant(participantUserId, participantUsername);
@@ -1186,30 +1228,14 @@ export default function LiveStream() {
           isCoStreamerView={isCoStreamerView}
           isInvitedPending={isInvitedPending}
           isPledgeStream={isPledgeStream}
-          canRemoveParticipants={canRemoveParticipants}
-          removableParticipants={removableParticipants}
           connectionStatus={connectionStatus}
-          isMicMuted={isMicMuted}
-          isCameraPaused={isCameraPaused}
-          isRecording={isRecording}
-          recordingDurationSeconds={recordingDurationSeconds}
-          streamEarningsUsd={stream?.earningsUsd}
-          isSavingRecording={isSavingRecording}
+          canOpenControls={isParticipantView}
+          activeParticipant={activeParticipant}
           onBack={() => navigate(-1)}
           onClose={() => navigate('/home')}
-          onOpenInviteModal={() => setIsInviting(true)}
-          onToggleMute={() => void handleToggleMute()}
-          onToggleCamera={() => void handleToggleCamera()}
-          onToggleRecording={() => void toggleRecording()}
-          onLeaveLive={() => void handleLeaveLive()}
-          onStopStream={() => void handleStopStream()}
-          onAcceptInvite={() => void handleAcceptInvite()}
-          onDeclineInvite={() => void handleLeaveLive()}
+          onOpenControlSheet={() => setShowControlSheet(true)}
           onFollowHost={() => void handleFollowHost()}
           onShare={() => void handleShare()}
-          onRemoveParticipant={(participantUserId, participantUsername) => {
-            void handleRemoveParticipant(participantUserId, participantUsername);
-          }}
         />
 
         <AnimatePresence>
@@ -1231,11 +1257,30 @@ export default function LiveStream() {
           )}
         </AnimatePresence>
 
-        <div className="pointer-events-none absolute right-2.5 bottom-[5.6rem] z-20 sm:inset-y-0 sm:right-0 sm:left-auto sm:flex sm:w-28 sm:flex-col sm:items-end sm:justify-end sm:gap-3 sm:px-6 sm:pb-36">
-          <div className="pointer-events-auto ml-auto flex max-w-[min(82vw,16rem)] items-center gap-2 rounded-full border border-white/10 bg-black/35 px-2 py-2 shadow-xl backdrop-blur-xl sm:ml-0 sm:max-w-max sm:flex-col sm:rounded-4xl sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none">
+        <div className="pointer-events-none absolute right-4 bottom-44 z-20 flex flex-col items-center gap-4 sm:right-6 lg:right-8">
+          <div className="pointer-events-auto relative">
+            <img
+              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${activeParticipant?.username ?? host?.username ?? 'streamer'}`}
+              className="h-12 w-12 rounded-full border-2 border-white object-cover"
+              alt={activeParticipant?.username ?? host?.username ?? 'avatar'}
+            />
+            {!isHostView && !isCoStreamerView && !isInvitedPending && (
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleFollowHost();
+                }}
+                className="absolute -bottom-2 left-1/2 flex -translate-x-1/2 rounded-full bg-red-500 p-1 text-white transition-transform hover:scale-105"
+              >
+                <Plus size={12} />
+              </button>
+            )}
+          </div>
+
+          <div className="pointer-events-auto flex flex-col items-center gap-5">
           <AnimatePresence>
             {floatingHearts.map((heart) => (
-              <motion.div key={heart.id} initial={{ opacity: 0, y: 0, scale: 0.7 }} animate={{ opacity: 1, y: -160, scale: 1.1 }} exit={{ opacity: 0 }} transition={{ duration: 1.35, ease: 'easeOut' }} className="absolute bottom-24 text-brand-primary" style={{ right: `${100 - heart.left}%`, rotate: `${heart.rotate}deg` }}>
+              <motion.div key={heart.id} initial={{ opacity: 0, y: 0, scale: 0.7 }} animate={{ opacity: 1, y: -160, scale: 1.1 }} exit={{ opacity: 0 }} transition={{ duration: 1.35, ease: 'easeOut' }} className="absolute bottom-20 text-brand-primary" style={{ right: `${100 - heart.left}%`, rotate: `${heart.rotate}deg` }}>
                 <Heart size={heart.size} fill="currentColor" />
               </motion.div>
             ))}
@@ -1253,33 +1298,39 @@ export default function LiveStream() {
             ))}
           </AnimatePresence>
 
+          {!isParticipantView && (
+            <button onClick={(event) => { event.stopPropagation(); void handleLike(); }} className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white transition-transform backdrop-blur-md hover:scale-110">
+              <Heart size={26} className="text-white" />
+            </button>
+          )}
+
+          {!isParticipantView && (
+            <button onClick={(event) => { event.stopPropagation(); setIsGifting(true); }} className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white transition-transform backdrop-blur-md hover:scale-110">
+              <Gift size={24} className="text-brand-accent" />
+            </button>
+          )}
+
+          <button onClick={(event) => { event.stopPropagation(); void handleShare(); }} className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white transition-transform backdrop-blur-md hover:scale-110">
+            <Share2 size={24} />
+          </button>
+
+          <div className="rounded-full border border-white/10 bg-black/40 px-3 py-2 text-center text-[10px] font-black uppercase tracking-[0.14em] text-white backdrop-blur-md">
+            {stream?.likesCount ?? 0}
+          </div>
+          </div>
           <AnimatePresence>
             {likeTicker && (
               <motion.div
                 key={likeTicker}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                className="rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-200 backdrop-blur-md sm:px-3 sm:py-1.5 sm:text-[9px]"
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 12 }}
+                className="pointer-events-none absolute right-0 top-16 rounded-full border border-white/10 bg-black/35 px-2.5 py-1 text-[7px] font-black uppercase tracking-[0.12em] text-zinc-200 backdrop-blur-md sm:px-3 sm:py-1.5 sm:text-[9px]"
               >
                 {likeTicker}
               </motion.div>
             )}
           </AnimatePresence>
-
-          {!isParticipantView && (
-            <button onClick={(event) => { event.stopPropagation(); setIsGifting(true); }} className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/10 text-white transition-colors backdrop-blur-md hover:bg-white/15 sm:h-14 sm:w-14">
-              <Gift size={20} className="text-brand-accent" />
-            </button>
-          )}
-
-          <div className="rounded-full border border-white/10 bg-black/30 px-2.5 py-2 text-center text-[8px] font-black uppercase tracking-[0.14em] backdrop-blur-md sm:px-3 sm:text-[10px] sm:tracking-[0.2em]">
-            <div className="flex items-center justify-center gap-1 text-brand-primary">
-              <Heart size={14} fill="currentColor" />
-              <span>{stream?.likesCount ?? 0}</span>
-            </div>
-          </div>
-          </div>
         </div>
 
         {isPledgeStream && isParticipantView && pledgeMatch && (
@@ -1385,6 +1436,41 @@ export default function LiveStream() {
           }}
           onAcceptInvite={() => void handleAcceptInvite()}
           onDeclineInvite={() => void handleLeaveLive()}
+          onOpenControls={() => setShowControlSheet(true)}
+          canOpenControls={isParticipantView}
+        />
+
+        <StreamControlSheet
+          open={showControlSheet}
+          stream={stream}
+          isHostView={isHostView}
+          isCoStreamerView={isCoStreamerView}
+          isPledgeStream={isPledgeStream}
+          canRespondToClaim={canRespondToClaim}
+          pendingClaimLabel={
+            pendingClaim
+              ? `${pendingClaim.claimedByUsername} claimed ${pendingClaim.outcome}${pendingClaim.note ? ` · ${pendingClaim.note}` : ''}`
+              : null
+          }
+          isMicMuted={isMicMuted}
+          isCameraPaused={isCameraPaused}
+          isRecording={isRecording}
+          onClose={() => setShowControlSheet(false)}
+          onToggleMute={() => void handleToggleMute()}
+          onToggleCamera={() => void handleToggleCamera()}
+          onToggleRecording={() => void toggleRecording()}
+          onOpenInviteModal={() => setIsInviting(true)}
+          onLeaveLive={() => void handleLeaveLive()}
+          onStopStream={() => void handleStopStream()}
+          onChangeOrientation={(orientation) => {
+            void handleChangeOrientation(orientation);
+          }}
+          onClaimPledge={(outcome) => {
+            void handlePledgeClaim(outcome);
+          }}
+          onPledgeClaimDecision={(decision) => {
+            void handlePledgeClaimDecision(decision);
+          }}
         />
 
         {streamEndedOverlay && !isHostView && (
