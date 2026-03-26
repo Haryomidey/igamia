@@ -1,19 +1,274 @@
-import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Trophy, Play, Users, Circle, MoreVertical, ChevronRight, Video, CalendarClock, Trash2, Radio } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
+import { ArrowLeft, Trophy, Play, Users, ChevronRight, Calendar, Clock, Trash2, Pause, Volume2, Maximize2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { CommunityVideoPlayer } from '../../../components/CommunityVideoPlayer';
-import { useAuth } from '../../../hooks/useAuth';
 import { useToast } from '../../../components/ToastProvider';
 import { useGames } from '../../../hooks/useGames';
 import { useStream, type Stream } from '../../../hooks/useStream';
+import { cn } from '../../../lib/utils';
+
+type RecordingVideo = {
+  id: string;
+  title: string;
+  recordingUrl?: string;
+  thumbnail: string;
+  duration: string;
+  recordedAt: string;
+  description: string;
+};
+
+function formatClockTime(totalSeconds: number) {
+  const safeSeconds = Number.isFinite(totalSeconds) ? Math.max(0, Math.floor(totalSeconds)) : 0;
+  const hrs = Math.floor(safeSeconds / 3600);
+  const mins = Math.floor((safeSeconds % 3600) / 60);
+  const secs = safeSeconds % 60;
+
+  if (hrs > 0) {
+    return [hrs, mins, secs].map((value) => String(value).padStart(2, '0')).join(':');
+  }
+
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+const VideoCard = ({
+  video,
+  onDelete,
+  isDeleting,
+}: {
+  video: RecordingVideo;
+  onDelete: (id: string) => void;
+  isDeleting: boolean;
+}) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [currentTime, setCurrentTime] = useState('00:00');
+  const [runtime, setRuntime] = useState(video.duration);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const element = videoRef.current;
+    if (!element) {
+      return;
+    }
+
+    const updateProgress = () => {
+      const duration = Number.isFinite(element.duration) ? element.duration : 0;
+      const current = Number.isFinite(element.currentTime) ? element.currentTime : 0;
+      setProgress(duration > 0 ? (current / duration) * 100 : 0);
+      setCurrentTime(formatClockTime(current));
+    };
+
+    const updateDuration = () => {
+      const duration = Number.isFinite(element.duration) ? element.duration : 0;
+      setRuntime(duration > 0 ? formatClockTime(duration) : video.duration);
+    };
+
+    const handlePause = () => setIsPlaying(false);
+    const handlePlay = () => setIsPlaying(true);
+
+    element.addEventListener('timeupdate', updateProgress);
+    element.addEventListener('loadedmetadata', updateDuration);
+    element.addEventListener('durationchange', updateDuration);
+    element.addEventListener('pause', handlePause);
+    element.addEventListener('play', handlePlay);
+    updateProgress();
+    updateDuration();
+
+    return () => {
+      element.removeEventListener('timeupdate', updateProgress);
+      element.removeEventListener('loadedmetadata', updateDuration);
+      element.removeEventListener('durationchange', updateDuration);
+      element.removeEventListener('pause', handlePause);
+      element.removeEventListener('play', handlePlay);
+    };
+  }, [video.duration, video.recordingUrl]);
+
+  const togglePlayback = () => {
+    const element = videoRef.current;
+    if (!element) {
+      return;
+    }
+
+    if (element.paused) {
+      void element.play();
+      return;
+    }
+
+    element.pause();
+  };
+
+  const openFullscreen = async () => {
+    const element = videoRef.current;
+    if (!element) {
+      return;
+    }
+
+    if (document.fullscreenElement === element) {
+      await document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+
+    await element.requestFullscreen().catch(() => undefined);
+  };
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="group relative overflow-hidden rounded-[2rem] border border-white/5 bg-zinc-900/40 shadow-2xl backdrop-blur-xl transition-all duration-500 hover:border-white/20"
+    >
+      <div className="relative aspect-video overflow-hidden">
+        {video.recordingUrl ? (
+          <video
+            ref={videoRef}
+            src={video.recordingUrl}
+            poster={video.thumbnail}
+            preload="metadata"
+            playsInline
+            className={cn(
+              'h-full w-full object-cover transition-transform duration-1000 ease-out',
+              isPlaying ? 'scale-110' : 'scale-100 group-hover:scale-105',
+            )}
+          />
+        ) : (
+          <img
+            src={video.thumbnail}
+            alt={video.title}
+            className={cn(
+              'h-full w-full object-cover transition-transform duration-1000 ease-out',
+              isPlaying ? 'scale-110' : 'scale-100 group-hover:scale-105',
+            )}
+            referrerPolicy="no-referrer"
+          />
+        )}
+
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 transition-opacity duration-500 group-hover:opacity-90" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+
+        <div className="absolute inset-x-0 bottom-0 translate-y-4 p-6 opacity-0 transition-all duration-500 ease-out group-hover:translate-y-0 group-hover:opacity-100">
+          <div className="flex flex-col gap-4">
+            <div className="group/progress relative h-1.5 w-full cursor-pointer overflow-hidden rounded-full bg-white/10">
+              <div
+                className="absolute inset-y-0 left-0 rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.5)] transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+              <div className="absolute inset-0 bg-white/5 opacity-0 transition-opacity group-hover/progress:opacity-100" />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-5">
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    togglePlayback();
+                  }}
+                  className="text-white transition-all duration-200 hover:scale-125 active:scale-95"
+                >
+                  {isPlaying ? <Pause size={22} fill="currentColor" /> : <Play size={22} fill="currentColor" />}
+                </button>
+                <div className="flex items-center gap-3">
+                  <Volume2 size={18} className="cursor-pointer text-white/60 transition-colors hover:text-white" />
+                  <span className="font-mono text-[10px] tracking-[0.2em] text-white/80 tabular-nums">
+                    {currentTime} <span className="mx-1 text-white/20">/</span> {runtime}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void openFullscreen();
+                  }}
+                  title="Open full screen"
+                  aria-label="Open full screen"
+                  className="text-white/40 transition-colors hover:text-white"
+                >
+                  <Maximize2 size={18} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {!isPlaying && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <motion.button
+              initial={false}
+              animate={{ scale: isPlaying ? 0.8 : 1, opacity: isPlaying ? 0 : 1 }}
+              onClick={(event) => {
+                event.stopPropagation();
+                togglePlayback();
+              }}
+              type="button"
+              className="flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white shadow-2xl backdrop-blur-2xl"
+            >
+              <Play size={28} fill="currentColor" className="ml-1" />
+            </motion.button>
+          </div>
+        )}
+
+        <div className="absolute left-4 top-4 flex gap-2">
+          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1 backdrop-blur-md">
+            <div className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white">Recorded</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-8">
+        <div className="mb-4 flex items-start justify-between">
+          <div className="min-w-0 flex-1 pr-4">
+            <h3 className="mb-2 truncate text-xl font-bold leading-tight text-white transition-colors group-hover:text-white">
+              {video.title}
+            </h3>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] font-bold uppercase tracking-[0.15em] text-white/40">
+              <div className="flex items-center gap-2">
+                <Calendar size={14} className="text-white/20" />
+                <span>{video.recordedAt}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Clock size={14} className="text-white/20" />
+                <span>{video.duration}</span>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete(video.id);
+            }}
+            disabled={isDeleting}
+            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/5 text-white/20 transition-all duration-300 hover:bg-red-500/10 hover:text-red-500 active:scale-90"
+          >
+            <span className="text-[9px] font-black uppercase tracking-[0.12em] text-inherit">
+              {isDeleting ? '...' : ''}
+            </span>
+            {!isDeleting && <Trash2 size={20} />}
+          </button>
+        </div>
+
+        <p className="line-clamp-2 text-sm font-medium leading-relaxed text-white/50">
+          {video.description}
+        </p>
+        {isDeleting && (
+          <p className="mt-4 text-[10px] font-black uppercase tracking-[0.16em] text-rose-300">
+            Deleting...
+          </p>
+        )}
+      </div>
+    </motion.div>
+  );
+};
 
 export default function History() {
-  const { user } = useAuth();
   const toast = useToast();
   const { featuredGames } = useGames({ featured: true });
   const { activeStreams, fetchActiveStreams, fetchMyRecordings, deleteRecording } = useStream();
   const [recordings, setRecordings] = useState<Stream[]>([]);
   const [deletingRecordingId, setDeletingRecordingId] = useState<string | null>(null);
+  const featuredGame = featuredGames[0];
 
   useEffect(() => {
     void fetchActiveStreams();
@@ -21,12 +276,6 @@ export default function History() {
     // The stream hook recreates helpers on render, so this initial fetch is mount-only by design.
   }, []);
 
-  const featuredGame = featuredGames[0];
-  const activeParticipationStream = user?._id
-    ? activeStreams.find((stream) =>
-        stream.participants.some((participant) => participant.userId === user._id),
-      ) ?? null
-    : null;
   const formatRecordingDuration = (seconds?: number) => {
     const total = Math.max(0, seconds ?? 0);
     const hrs = Math.floor(total / 3600);
@@ -40,19 +289,19 @@ export default function History() {
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  const handleDeleteRecording = async (recording: Stream) => {
-    const confirmed = window.confirm(`Delete "${recording.title}" from your recorded streams?`);
+  const handleDeleteRecording = async (recordingId: string, recordingTitle: string) => {
+    const confirmed = window.confirm(`Delete "${recordingTitle}" from your recorded streams?`);
     if (!confirmed) {
       return;
     }
 
     try {
-      setDeletingRecordingId(recording._id);
-      await deleteRecording(recording._id);
-      setRecordings((current) => current.filter((entry) => entry._id !== recording._id));
+      setDeletingRecordingId(recordingId);
+      await deleteRecording(recordingId);
+      setRecordings((current) => current.filter((entry) => entry._id !== recordingId));
       toast.success('Recorded stream deleted.');
     } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Unable to delete recorded stream.');
+      toast.error(err?.response?.data?.message ?? 'Unable to delete media.');
     } finally {
       setDeletingRecordingId(null);
     }
@@ -81,53 +330,6 @@ export default function History() {
         </div>
       </div>
 
-      <div className="relative aspect-video w-full rounded-[3rem] overflow-hidden border border-white/10 group shadow-2xl shadow-black/50">
-        <img src={featuredGame?.heroImage ?? 'https://picsum.photos/seed/history/1920/1080'} alt={featuredGame?.title ?? 'Featured'} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent opacity-60" />
-
-        <div className="absolute inset-0 flex items-center justify-center">
-          {activeParticipationStream ? (
-            <Link
-              to={`/stream?streamId=${activeParticipationStream._id}`}
-              className="bg-[#1a1635]/85 backdrop-blur-xl border border-white/10 p-8 rounded-[2rem] flex flex-col items-center gap-4 shadow-2xl transition-transform hover:scale-[1.02]"
-            >
-              <div className="relative w-16 h-16 flex items-center justify-center">
-                <Circle size={64} className="text-brand-primary/20 absolute" strokeWidth={4} />
-                <Circle size={64} className="text-brand-primary absolute" strokeWidth={4} strokeDasharray="100 200" />
-                <Radio size={22} className="text-white" />
-              </div>
-              <span className="text-[10px] font-black text-white uppercase tracking-[0.3em]">Resume Live</span>
-            </Link>
-          ) : (
-            <div className="bg-[#1a1635]/80 backdrop-blur-xl border border-white/10 p-8 rounded-[2rem] flex flex-col items-center gap-4 shadow-2xl">
-              <div className="relative w-16 h-16 flex items-center justify-center">
-                <Circle size={64} className="text-brand-primary/20 absolute" strokeWidth={4} />
-                <Circle size={64} className="text-brand-primary absolute" strokeWidth={4} strokeDasharray="100 200" />
-                <Play size={24} className="text-white fill-current ml-1" />
-              </div>
-              <span className="text-[10px] font-black text-white uppercase tracking-[0.3em]">Resume Playing</span>
-            </div>
-          )}
-        </div>
-
-        <div className="absolute bottom-10 left-10 right-10 flex flex-col gap-4">
-          <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
-            <div className="h-full w-1/3 bg-brand-accent rounded-full" />
-          </div>
-          <div className="flex items-center justify-between text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-            <div className="flex items-center gap-6">
-              <Play size={16} className="text-white fill-current" />
-              <span>
-                {activeParticipationStream
-                  ? `${activeParticipationStream.title} / ${activeParticipationStream.participants[0]?.username ?? 'Live Host'}`
-                  : `${featuredGame?.genre ?? 'Game'} / ${featuredGame?.publisher ?? 'Publisher'}`}
-              </span>
-            </div>
-            <MoreVertical size={16} />
-          </div>
-        </div>
-      </div>
-
       <section className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -141,53 +343,26 @@ export default function History() {
         {recordings.length ? (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {recordings.map((recording) => (
-              <article key={recording._id} className="group overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))] shadow-xl shadow-black/20">
-                <div className="relative aspect-video overflow-hidden">
-                  <CommunityVideoPlayer
-                    src={recording.recordingUrl}
-                    className="h-full w-full rounded-none bg-black"
-                  />
-                  <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0f0b21]/90 via-transparent to-transparent" />
-                  <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-full border border-white/10 bg-black/55 px-3 py-1.5 backdrop-blur-md sm:left-4 sm:top-4">
-                    <Video size={12} className="text-brand-primary" />
-                    <span className="text-[8px] font-black uppercase tracking-widest text-white">Recorded</span>
-                  </div>
-                  <div className="pointer-events-none absolute bottom-3 right-3 rounded-full border border-white/10 bg-black/55 px-3 py-1 text-[8px] font-black uppercase tracking-[0.2em] text-zinc-100 backdrop-blur-md sm:bottom-4 sm:right-4">
-                    {formatRecordingDuration(recording.recordingDurationSeconds)}
-                  </div>
-                </div>
-                <div className="space-y-4 p-4 sm:p-5">
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-black uppercase italic leading-snug text-white sm:text-base">
-                      {recording.title}
-                    </h3>
-                    <p className="text-xs leading-relaxed text-zinc-400">
-                      Replay a saved live session with the original stream audio and timeline controls.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-300">
-                      <CalendarClock size={12} className="text-brand-primary" />
-                      {recording.recordedAt ? new Date(recording.recordedAt).toLocaleDateString() : 'Saved stream'}
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-zinc-300">
-                      <Play size={12} className="text-brand-accent fill-current" />
-                      {formatRecordingDuration(recording.recordingDurationSeconds)}
-                    </div>
-                  </div>
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteRecording(recording)}
-                      disabled={deletingRecordingId === recording._id}
-                      className="inline-flex items-center gap-2 rounded-full border border-red-500/20 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-red-200 transition-colors hover:bg-red-500/20 disabled:opacity-50"
-                    >
-                      <Trash2 size={12} />
-                      {deletingRecordingId === recording._id ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </div>
-                </div>
-              </article>
+              <VideoCard
+                key={recording._id}
+                video={{
+                  id: recording._id,
+                  title: recording.title,
+                  recordingUrl: recording.recordingUrl,
+                  thumbnail: `https://picsum.photos/seed/${recording._id}/900/600`,
+                  duration: formatRecordingDuration(recording.recordingDurationSeconds),
+                  recordedAt: recording.recordedAt ? new Date(recording.recordedAt).toLocaleDateString() : 'Saved stream',
+                  description: 'Replay a saved live session with the original stream audio and timeline controls.',
+                }}
+                isDeleting={deletingRecordingId === recording._id}
+                onDelete={(recordingId) => {
+                  if (deletingRecordingId === recordingId) {
+                    return;
+                  }
+
+                  void handleDeleteRecording(recordingId, recording.title);
+                }}
+              />
             ))}
           </div>
         ) : (

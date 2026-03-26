@@ -11,12 +11,13 @@ import {
   X,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useSocial, type SocialUser } from '../../../hooks/useSocial';
 import { useWallet } from '../../../hooks/useWallet';
 import { useToast } from '../../../components/ToastProvider';
 import { useMediaUpload } from '../../../hooks/useMediaUpload';
 import { CommunityVideoPlayer } from '../../../components/CommunityVideoPlayer';
+import { useAuth } from '../../../hooks/useAuth';
 
 type CommunityTab = 'feed' | 'friends' | 'discover' | 'requests';
 
@@ -41,6 +42,8 @@ export default function Social() {
   const pendingPreviewUrlRef = useRef<string | null>(null);
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated } = useAuth();
 
   const {
     discoverUsers,
@@ -55,8 +58,13 @@ export default function Social() {
     createPost,
     togglePostLike,
   } = useSocial(true);
-  const { walletData, gift } = useWallet(true);
+  const { walletData, gift } = useWallet(isAuthenticated);
   const { uploadMedia } = useMediaUpload();
+
+  const requireLogin = (message: string) => {
+    toast.info(message, { title: 'Login Required' });
+    navigate('/login', { state: { from: location } });
+  };
 
   const people = activeTab === 'friends' ? friends : discoverUsers;
 
@@ -101,6 +109,10 @@ export default function Social() {
 
   const handleCreatePost = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!isAuthenticated) {
+      requireLogin('Log in first to post in the community.');
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -123,6 +135,12 @@ export default function Social() {
     event: React.ChangeEvent<HTMLInputElement>,
     mediaType: 'image' | 'video',
   ) => {
+    if (!isAuthenticated) {
+      requireLogin('Log in first to attach media to a post.');
+      event.target.value = '';
+      return;
+    }
+
     const file = event.target.files?.[0];
     if (!file) {
       return;
@@ -165,6 +183,11 @@ export default function Social() {
   };
 
   const handleSendRequest = async (targetUserId: string) => {
+    if (!isAuthenticated) {
+      requireLogin('Log in first to connect with players.');
+      return;
+    }
+
     try {
       setSendingRequestUserId(targetUserId);
       await sendRequest(targetUserId);
@@ -177,6 +200,11 @@ export default function Social() {
   };
 
   const handleAcceptRequest = async (requestId: string) => {
+    if (!isAuthenticated) {
+      requireLogin('Log in first to accept requests.');
+      return;
+    }
+
     try {
       setAcceptingRequestId(requestId);
       await acceptRequest(requestId);
@@ -191,6 +219,10 @@ export default function Social() {
   const handleGift = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedGamer) {
+      return;
+    }
+    if (!isAuthenticated) {
+      requireLogin('Log in first to send gifts.');
       return;
     }
 
@@ -324,21 +356,26 @@ export default function Social() {
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
                 <ImagePlus size={14} />
                 {isUploadingMedia ? 'Uploading...' : 'Attach Image'}
-                <input type="file" accept="image/*" className="hidden" onChange={(event) => void handleUploadMediaDraft(event, 'image')} />
+                <input type="file" accept="image/*" className="hidden" disabled={!isAuthenticated} onChange={(event) => void handleUploadMediaDraft(event, 'image')} />
               </label>
               <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-white">
                 <Video size={14} />
                 {isUploadingMedia ? 'Uploading...' : 'Attach Video'}
-                <input type="file" accept="video/*" className="hidden" onChange={(event) => void handleUploadMediaDraft(event, 'video')} />
+                <input type="file" accept="video/*" className="hidden" disabled={!isAuthenticated} onChange={(event) => void handleUploadMediaDraft(event, 'video')} />
               </label>
               <button
                 type="submit"
-                disabled={isSubmitting || isUploadingMedia || (!postText.trim() && !pendingMedia?.secureUrl)}
+                disabled={!isAuthenticated || isSubmitting || isUploadingMedia || (!postText.trim() && !pendingMedia?.secureUrl)}
                 className="rounded-full bg-brand-primary px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
               >
                 {isSubmitting ? 'Posting...' : 'Post Now'}
               </button>
             </div>
+            {!isAuthenticated && (
+              <p className="mt-3 text-xs text-zinc-500">
+                Browse the feed as a guest. Login is required to post, like, comment, connect, gift, or message.
+              </p>
+            )}
           </form>
 
           <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -390,7 +427,14 @@ export default function Social() {
                   ) : null}
                   <div className="mt-5 flex items-center gap-3">
                     <button
-                      onClick={() => void togglePostLike(post._id)}
+                      onClick={() => {
+                        if (!isAuthenticated) {
+                          requireLogin('Log in first to like community posts.');
+                          return;
+                        }
+
+                        void togglePostLike(post._id);
+                      }}
                       className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-widest ${
                         post.likedByMe ? 'bg-brand-primary/20 text-brand-primary' : 'bg-white/5 text-zinc-300'
                       }`}
@@ -511,7 +555,7 @@ export default function Social() {
                     <p className="mt-1 text-[10px] uppercase tracking-widest text-zinc-500">@{request.fromUserId?.username}</p>
                     <button
                       onClick={() => void handleAcceptRequest(request._id)}
-                      disabled={acceptingRequestId === request._id}
+                      disabled={!isAuthenticated || acceptingRequestId === request._id}
                       className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
                     >
                       <UserPlus size={14} />
@@ -575,7 +619,7 @@ export default function Social() {
                 ) : (
                   <button
                     onClick={() => void handleSendRequest(selectedGamer.id)}
-                    disabled={sendingRequestUserId === selectedGamer.id}
+                    disabled={!isAuthenticated || sendingRequestUserId === selectedGamer.id}
                     className="rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
                   >
                     {sendingRequestUserId === selectedGamer.id ? 'Sending...' : 'Send Request'}
@@ -597,7 +641,7 @@ export default function Social() {
                     />
                     <button
                       type="submit"
-                      disabled={isSubmitting}
+                      disabled={!isAuthenticated || isSubmitting}
                       className="mt-4 inline-flex items-center gap-2 rounded-full bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
                     >
                       <Gift size={14} />
@@ -613,6 +657,10 @@ export default function Social() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (!isAuthenticated) {
+                          requireLogin('Log in first to open direct messages.');
+                          return;
+                        }
                         navigate(`/messages/${selectedGamer.id}`);
                         setSelectedGamer(null);
                       }}

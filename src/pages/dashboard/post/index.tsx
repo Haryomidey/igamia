@@ -1,13 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Heart, MessageCircle, MoveLeft } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSocial } from '../../../hooks/useSocial';
 import { useToast } from '../../../components/ToastProvider';
 import { CommunityVideoPlayer } from '../../../components/CommunityVideoPlayer';
+import { useAuth } from '../../../hooks/useAuth';
 
 export default function PostPage() {
   const { postId } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
+  const { isAuthenticated } = useAuth();
   const [commentText, setCommentText] = useState('');
   const [isLoadingPost, setIsLoadingPost] = useState(true);
   const [isLoadingComments, setIsLoadingComments] = useState(true);
@@ -29,6 +33,11 @@ export default function PostPage() {
     [feed, postId],
   );
   const comments = postId ? commentsByPost[postId] ?? [] : [];
+
+  const requireLogin = (message: string) => {
+    toast.info(message, { title: 'Login Required' });
+    navigate('/login', { state: { from: location } });
+  };
 
   useEffect(() => {
     if (error) {
@@ -72,6 +81,11 @@ export default function PostPage() {
 
   const handleCommentSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!isAuthenticated) {
+      requireLogin('Log in first to comment on community posts.');
+      return;
+    }
+
     if (!postId || !commentText.trim()) {
       return;
     }
@@ -162,7 +176,14 @@ export default function PostPage() {
 
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <button
-                onClick={() => void togglePostLike(post._id)}
+                onClick={() => {
+                  if (!isAuthenticated) {
+                    requireLogin('Log in first to like community posts.');
+                    return;
+                  }
+
+                  void togglePostLike(post._id);
+                }}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[10px] font-black uppercase tracking-widest ${
                   post.likedByMe ? 'bg-brand-primary/20 text-brand-primary' : 'bg-white/5 text-zinc-300'
                 }`}
@@ -224,18 +245,21 @@ export default function PostPage() {
                 type="text"
                 value={commentText}
                 onChange={(event) => setCommentText(event.target.value)}
-                placeholder="Add a comment"
+                placeholder={isAuthenticated ? 'Add a comment' : 'Login to comment'}
                 className="min-w-0 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-white outline-none"
               />
               <button
                 type="submit"
-                disabled={!commentText.trim() || isSubmittingComment}
+                disabled={!isAuthenticated || !commentText.trim() || isSubmittingComment}
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-primary px-5 py-3 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-50"
               >
                 <MessageCircle size={14} />
                 {isSubmittingComment ? 'Sending...' : 'Comment'}
               </button>
             </form>
+            {!isAuthenticated && (
+              <p className="text-xs text-zinc-500">Guests can read the thread, but login is required to like or comment.</p>
+            )}
           </aside>
         </div>
       ) : (

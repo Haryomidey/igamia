@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -26,6 +27,8 @@ import { UpdateStreamLayoutDto } from './dto/update-stream-layout.dto';
 
 @Injectable()
 export class StreamsService {
+  private readonly logger = new Logger(StreamsService.name);
+
   constructor(
     @InjectModel(Stream.name) private readonly streamModel: Model<StreamDocument>,
     @InjectModel(StreamComment.name)
@@ -346,7 +349,16 @@ export class StreamsService {
       throw new NotFoundException('Recorded stream not found');
     }
 
-    await this.mediaService.deleteMedia(stream.recordingUrl, 'video');
+    try {
+      await this.mediaService.deleteMedia(stream.recordingUrl, 'video');
+    } catch (error) {
+      this.logger.warn(
+        `Failed to delete recording asset for stream ${streamId}: ${
+          error instanceof Error ? error.message : 'Unknown error'
+        }`,
+      );
+    }
+
     stream.recordingUrl = '';
     stream.recordedAt = undefined;
     stream.recordingDurationSeconds = 0;

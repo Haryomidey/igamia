@@ -22,6 +22,7 @@ import {
   EmptyStreamState,
   GiftModal,
   InvitePlayersModal,
+  ShareStreamModal,
 } from './components/StreamModals';
 import { StreamControlSheet } from './components/StreamControlSheet';
 
@@ -88,6 +89,19 @@ function wait(durationMs: number) {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
 
+function formatElapsedDuration(totalSeconds: number) {
+  const seconds = Math.max(0, totalSeconds);
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hrs > 0) {
+    return [hrs, mins, secs].map((value) => String(value).padStart(2, '0')).join(':');
+  }
+
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 export default function LiveStream() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -127,18 +141,21 @@ export default function LiveStream() {
     saveRecording,
     disconnect,
   } = useStream();
-  const { discoverUsers, friends, sendRequest, fetchSocial } = useSocial(true);
+  const { discoverUsers, friends, sendRequest, sendMessage, fetchSocial } = useSocial(true);
   const { fetchMatch, submitResultClaim, respondToResultClaim } = usePledges(false);
   const toast = useToast();
 
   const [message, setMessage] = useState('');
   const [isGifting, setIsGifting] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [showControlSheet, setShowControlSheet] = useState(false);
   const [selectedParticipantUserId, setSelectedParticipantUserId] = useState<string | null>(null);
   const [giftAmount, setGiftAmount] = useState('10');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [sendingShareUserId, setSendingShareUserId] = useState<string | null>(null);
+  const [isSharingToFollowers, setIsSharingToFollowers] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isSavingRecording, setIsSavingRecording] = useState(false);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
@@ -151,6 +168,7 @@ export default function LiveStream() {
   const [giftTicker, setGiftTicker] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [roomReconnectKey, setRoomReconnectKey] = useState(0);
+  const [liveNowTimestamp, setLiveNowTimestamp] = useState(() => Date.now());
   const [mediaStates, setMediaStates] = useState<Record<string, { username: string; isMuted: boolean; isCameraOff: boolean }>>({});
   const [pledgeMatch, setPledgeMatch] = useState<MatchActivity | null>(null);
   const [streamEndedOverlay, setStreamEndedOverlay] = useState<StreamEndedOverlay | null>(null);
@@ -222,6 +240,18 @@ export default function LiveStream() {
     () => Boolean(host?.userId && friends.some((friend) => friend.id === host.userId)),
     [friends, host?.userId],
   );
+  const liveDurationLabel = useMemo(() => {
+    if (!isHostView || !host?.joinedAt) {
+      return null;
+    }
+
+    const startedAt = new Date(host.joinedAt).getTime();
+    if (Number.isNaN(startedAt)) {
+      return null;
+    }
+
+    return formatElapsedDuration(Math.floor((liveNowTimestamp - startedAt) / 1000));
+  }, [host?.joinedAt, isHostView, liveNowTimestamp]);
   const primaryTile = useMemo(
     () => videoTiles.find((tile) => tile.participantUserId === user?._id) ?? videoTiles[0] ?? null,
     [user?._id, videoTiles],
@@ -327,12 +357,23 @@ export default function LiveStream() {
     const countLabel = recentLike.likerCount && recentLike.likerCount > 1 ? ` x${recentLike.likerCount}` : '';
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setLikeNotices((current) => [...current.slice(-7), { id, message: `${recentLike.likedBy}${countLabel}` }]);
-    const timeout = window.setTimeout(() => {
+    window.setTimeout(() => {
       setLikeNotices((current) => current.filter((entry) => entry.id !== id));
     }, 1800);
-
-    return () => window.clearTimeout(timeout);
   }, [isHostView, recentLike, resolvedStreamId]);
+
+  useEffect(() => {
+    if (!isHostView || !host?.joinedAt) {
+      return;
+    }
+
+    setLiveNowTimestamp(Date.now());
+    const interval = window.setInterval(() => {
+      setLiveNowTimestamp(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [host?.joinedAt, isHostView]);
 
   useEffect(() => {
     if (
@@ -754,15 +795,63 @@ export default function LiveStream() {
       return;
     }
 
+    setIsShareModalOpen(true);
+  };
+
+  const getShareUrl = async () => {
+    if (!resolvedStreamId) {
+      return null;
+    }
+
     try {
       const result = await shareStream(resolvedStreamId);
-      const shareUrl = result.data?.shareUrl ?? stream?.shareUrl;
-      if (shareUrl) {
-        await navigator.clipboard.writeText(shareUrl);
-      }
-      toast.success('Live link copied.');
+      return result.data?.shareUrl ?? stream?.shareUrl ?? null;
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to share stream.');
+      return null;
+    }
+  };
+
+  const handleShareToFriend = async (targetUserId: string) => {
+    const shareUrl = await getShareUrl();
+    if (!shareUrl) {
+      return;
+    }
+
+    try {
+      setSendingShareUserId(targetUserId);
+      await sendMessage(targetUserId, `Join my live stream: ${shareUrl}`);
+      toast.success('Live shared successfully.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to send live share.');
+    } finally {
+      setSendingShareUserId(null);
+    }
+  };
+
+  const handleShareToFollowers = async () => {
+    if (!friends.length) {
+      toast.info('You have no connected friends to share with yet.');
+      return;
+    }
+
+    const shareUrl = await getShareUrl();
+    if (!shareUrl) {
+      return;
+    }
+
+    try {
+      setIsSharingToFollowers(true);
+      await Promise.all(
+        friends.map((friend) => sendMessage(friend.id, `Join my live stream: ${shareUrl}`)),
+      );
+      toast.success('Live shared with your followers.');
+      setIsShareModalOpen(false);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to share live with followers.');
+    } finally {
+      setIsSharingToFollowers(false);
+      setSendingShareUserId(null);
     }
   };
 
@@ -1245,7 +1334,9 @@ export default function LiveStream() {
           onClose={() => navigate('/home')}
           onOpenControlSheet={() => setShowControlSheet(true)}
           onFollowHost={() => void handleFollowHost()}
-          onShare={() => void handleShare()}
+              onShare={() => void handleShare()}
+              liveDurationLabel={liveDurationLabel}
+              isSavingRecording={isSavingRecording}
         />
 
         <AnimatePresence>
@@ -1283,6 +1374,20 @@ export default function LiveStream() {
         )}
 
         <div className="pointer-events-none absolute right-4 bottom-44 z-20 flex flex-col items-center gap-4 sm:right-6 lg:right-8">
+          <div className="pointer-events-none absolute bottom-16 right-14 z-10 flex flex-col items-end gap-2 sm:bottom-20 sm:right-16">
+            <AnimatePresence>
+              {activityOverlays.map((entry) => (
+                <motion.div key={entry.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className={`max-w-32 rounded-2xl border px-2 py-1.5 text-right text-[7px] font-black uppercase tracking-[0.12em] backdrop-blur-md sm:max-w-56 sm:px-3 sm:py-2 sm:text-[11px] sm:tracking-[0.18em] ${
+                  entry.accent === 'gift'
+                    ? 'border-brand-accent/30 bg-brand-accent/20 text-brand-accent'
+                    : 'border-white/15 bg-white/10 text-white'
+                }`}>
+                  {entry.message}
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+
           <div className="pointer-events-auto relative">
             <img
               src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${activeParticipant?.username ?? host?.username ?? 'streamer'}`}
@@ -1307,18 +1412,6 @@ export default function LiveStream() {
             {floatingHearts.map((heart) => (
               <motion.div key={heart.id} initial={{ opacity: 0, y: 0, scale: 0.7 }} animate={{ opacity: 1, y: -160, scale: 1.1 }} exit={{ opacity: 0 }} transition={{ duration: 1.35, ease: 'easeOut' }} className="absolute bottom-20 text-brand-primary" style={{ right: `${100 - heart.left}%`, rotate: `${heart.rotate}deg` }}>
                 <Heart size={heart.size} fill="currentColor" />
-              </motion.div>
-            ))}
-          </AnimatePresence>
-
-          <AnimatePresence>
-            {activityOverlays.map((entry) => (
-              <motion.div key={entry.id} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className={`max-w-32 rounded-2xl border px-2 py-1.5 text-right text-[7px] font-black uppercase tracking-[0.12em] backdrop-blur-md sm:max-w-56 sm:px-3 sm:py-2 sm:text-[11px] sm:tracking-[0.18em] ${
-                entry.accent === 'gift'
-                  ? 'border-brand-accent/30 bg-brand-accent/20 text-brand-accent'
-                  : 'border-white/15 bg-white/10 text-white'
-              }`}>
-                {entry.message}
               </motion.div>
             ))}
           </AnimatePresence>
@@ -1467,6 +1560,7 @@ export default function LiveStream() {
           isMicMuted={isMicMuted}
           isCameraPaused={isCameraPaused}
           isRecording={isRecording}
+          isSavingRecording={isSavingRecording}
           onClose={() => setShowControlSheet(false)}
           onToggleMute={() => void handleToggleMute()}
           onToggleCamera={() => void handleToggleCamera()}
@@ -1523,6 +1617,26 @@ export default function LiveStream() {
         }}
         onRemoveParticipant={(participantUserId, participantUsername) => {
           void handleRemoveParticipant(participantUserId, participantUsername);
+        }}
+      />
+
+      <ShareStreamModal
+        open={isShareModalOpen && !isStreamEndedForViewer}
+        hostUsername={host?.username}
+        friends={friends}
+        isSharingToFollowers={isSharingToFollowers}
+        sendingFriendUserId={sendingShareUserId}
+        onClose={() => {
+          if (isSharingToFollowers || sendingShareUserId) {
+            return;
+          }
+          setIsShareModalOpen(false);
+        }}
+        onShareToFriend={(targetUserId) => {
+          void handleShareToFriend(targetUserId);
+        }}
+        onShareToFollowers={() => {
+          void handleShareToFollowers();
         }}
       />
     </div>

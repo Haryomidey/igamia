@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Eye, EyeOff, Gamepad2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,6 +15,7 @@ type NavigationState = {
   from?: {
     pathname?: string;
   };
+  authMessage?: string;
 };
 
 export default function Auth({ mode }: AuthProps) {
@@ -58,6 +59,7 @@ export default function Auth({ mode }: AuthProps) {
     suggestions: [],
   });
   const usernameRequestRef = useRef(0);
+  const authMessageShownRef = useRef<string | null>(null);
 
   const verificationEmail = useMemo(() => {
     if (mode === 'signup') {
@@ -67,7 +69,18 @@ export default function Auth({ mode }: AuthProps) {
     return locationState?.email ?? signupForm.email ?? loginForm.identifier ?? forgotEmail;
   }, [forgotEmail, locationState?.email, loginForm.identifier, mode, signupForm.email]);
 
-  const redirectAfterAuth = locationState?.from?.pathname || '/home';
+  const redirectAfterAuth = locationState?.from?.pathname || '/';
+
+  useEffect(() => {
+    if (
+      locationState?.authMessage &&
+      authMessageShownRef.current !== locationState.authMessage &&
+      (mode === 'login' || mode === 'signup')
+    ) {
+      authMessageShownRef.current = locationState.authMessage;
+      toast.info(locationState.authMessage, { title: 'Login Required' });
+    }
+  }, [locationState?.authMessage, mode, toast]);
 
   const signupValidation = useMemo(() => {
     const fullName = signupForm.fullName.trim();

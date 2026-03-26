@@ -166,13 +166,19 @@ export function useSocial(autoLoad = true) {
   const fetchSocial = async () => {
     try {
       setLoading(true);
-      const [{ data: discoverData }, { data: requestsData }, { data: feedData }, { data: friendsData }] =
-        await Promise.all([
-          api.get<SocialUser[]>('/social/discover'),
-          api.get<SocialRequest[]>('/social/requests'),
-          api.get<SocialPost[]>('/social/feed'),
-          api.get<SocialUser[]>('/social/friends'),
-        ]);
+      const hasToken = Boolean(getAccessToken());
+      const [discoverResult, requestsResult, feedResult, friendsResult] = await Promise.allSettled([
+        api.get<SocialUser[]>('/social/discover'),
+        hasToken ? api.get<SocialRequest[]>('/social/requests') : Promise.resolve({ data: [] as SocialRequest[] }),
+        api.get<SocialPost[]>('/social/feed'),
+        hasToken ? api.get<SocialUser[]>('/social/friends') : Promise.resolve({ data: [] as SocialUser[] }),
+      ]);
+
+      const discoverData = discoverResult.status === 'fulfilled' ? discoverResult.value.data : [];
+      const requestsData = requestsResult.status === 'fulfilled' ? requestsResult.value.data : [];
+      const feedData = feedResult.status === 'fulfilled' ? feedResult.value.data : [];
+      const friendsData = friendsResult.status === 'fulfilled' ? friendsResult.value.data : [];
+
       setDiscoverUsers(discoverData);
       setRequests(requestsData);
       setFeed(feedData);
@@ -314,7 +320,9 @@ export function useSocial(autoLoad = true) {
 
     if (autoLoad) {
       void fetchSocial();
-      connect();
+      if (token) {
+        connect();
+      }
     }
 
     return () => disconnect();

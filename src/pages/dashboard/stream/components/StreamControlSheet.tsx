@@ -61,6 +61,7 @@ export function StreamControlSheet({
   isMicMuted,
   isCameraPaused,
   isRecording,
+  isSavingRecording,
   onClose,
   onToggleMute,
   onToggleCamera,
@@ -82,6 +83,7 @@ export function StreamControlSheet({
   isMicMuted: boolean;
   isCameraPaused: boolean;
   isRecording: boolean;
+  isSavingRecording: boolean;
   onClose: () => void;
   onToggleMute: () => void;
   onToggleCamera: () => void;
@@ -136,8 +138,8 @@ export function StreamControlSheet({
                 />
                 <ControlButton
                   icon={isRecording ? PauseCircle : PlayCircle}
-                  label={isRecording ? 'Stop Rec' : 'Record'}
-                  active={isRecording}
+                  label={isSavingRecording ? 'Saving' : isRecording ? 'Stop Rec' : 'Record'}
+                  active={isRecording || isSavingRecording}
                   onClick={onToggleRecording}
                 />
                 {isHostView && !isPledgeStream && (

@@ -23,6 +23,8 @@ export function StreamHeader({
   connectionStatus,
   canOpenControls,
   activeParticipant,
+  liveDurationLabel,
+  isSavingRecording,
   onBack,
   onClose,
   onOpenControlSheet,
@@ -38,6 +40,8 @@ export function StreamHeader({
   connectionStatus: ConnectionStatus;
   canOpenControls: boolean;
   activeParticipant?: Stream['participants'][number];
+  liveDurationLabel?: string | null;
+  isSavingRecording?: boolean;
   onBack: () => void;
   onClose: () => void;
   onOpenControlSheet: () => void;
@@ -84,6 +88,16 @@ export function StreamHeader({
               {connectionStatus === 'connecting' && (
                 <span className="rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-200 backdrop-blur-md">
                   Connecting
+                </span>
+              )}
+              {isHostView && liveDurationLabel && (
+                <span className="rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-200 backdrop-blur-md">
+                  Live {liveDurationLabel}
+                </span>
+              )}
+              {isHostView && isSavingRecording && (
+                <span className="rounded-full border border-brand-primary/20 bg-brand-primary/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-brand-primary">
+                  Saving...
                 </span>
               )}
             </div>

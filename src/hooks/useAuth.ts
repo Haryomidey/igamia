@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
+import { createContext, createElement, useContext, useEffect, useMemo, useState } from 'react';
 import { api, clearAccessToken, getAccessToken, getApiErrorMessage, setAccessToken } from '../api/axios';
 
 export type AuthUser = {
@@ -42,7 +43,11 @@ type UsernameAvailabilityResponse = {
   reason?: string;
 };
 
-export function useAuth() {
+type AuthContextValue = ReturnType<typeof useProvideAuth>;
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+function useProvideAuth() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -214,7 +219,7 @@ export function useAuth() {
     return data;
   };
 
-  return {
+  return useMemo(() => ({
     user,
     loading,
     submitting,
@@ -230,5 +235,19 @@ export function useAuth() {
     updateProfile,
     checkUsernameAvailability,
     logout,
-  };
+  }), [user, loading, submitting, error]);
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const value = useProvideAuth();
+  return createElement(AuthContext.Provider, { value }, children);
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within AuthProvider');
+  }
+
+  return context;
 }

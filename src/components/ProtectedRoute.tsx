@@ -3,7 +3,6 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { getAccessToken } from '../api/axios';
 import { useAuth } from '../hooks/useAuth';
 import { needsOnboarding } from '../lib/profile';
-import { PledgeNotificationsProvider } from './PledgeNotifications';
 
 export function ProtectedRoute() {
   const location = useLocation();
@@ -21,16 +20,21 @@ export function ProtectedRoute() {
   }
 
   if (!hasToken || !isAuthenticated) {
-    return <Navigate to="/login" replace state={{ from: location }} />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{
+          from: location,
+          authMessage: 'Log in first to continue.',
+        }}
+      />
+    );
   }
 
   if (location.pathname !== '/personalize' && needsOnboarding(user)) {
     return <Navigate to="/personalize" replace />;
   }
 
-  return (
-    <PledgeNotificationsProvider>
-      <Outlet />
-    </PledgeNotificationsProvider>
-  );
+  return <Outlet />;
 }

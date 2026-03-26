@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { 
+import {
   Home, 
   Gamepad2, 
   Wallet, 
@@ -12,6 +12,7 @@ import {
   MoreHorizontal
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useAuth } from '../hooks/useAuth';
 
 const NAV_ITEMS = [
   { icon: Home, label: 'Home', path: '/home' },
@@ -52,6 +53,7 @@ export function BottomNav() {
 
 export function Sidebar() {
   const location = useLocation();
+  const { user, isAuthenticated } = useAuth();
 
   return (
     <aside className="hidden md:flex flex-col w-72 bg-[#1a1635] border-r border-white/5 h-screen sticky top-0 p-8">
@@ -86,12 +88,19 @@ export function Sidebar() {
       <div className="mt-auto pt-8">
         <Link to="/profile" className="flex items-center gap-4 p-4 bg-white/5 rounded-[2rem] border border-white/5 hover:bg-white/10 transition-all group">
           <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-brand-primary group-hover:scale-105 transition-transform">
-            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=John" alt="User" />
+            <img
+              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.username ?? 'guest'}`}
+              alt={user?.username ?? 'Guest'}
+            />
           </div>
           <div>
-            <p className="text-sm font-black text-white">John Doe</p>
+            <p className="text-sm font-black text-white">
+              {user?.fullName ?? 'Guest Preview'}
+            </p>
             <div className="flex items-center gap-1 bg-brand-accent/20 px-2 py-0.5 rounded-full">
-              <span className="text-[8px] font-black text-brand-accent uppercase">Pro Gamer</span>
+              <span className="text-[8px] font-black text-brand-accent uppercase">
+                {isAuthenticated ? 'Pro Gamer' : 'Login To Play'}
+              </span>
             </div>
           </div>
         </Link>

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Radio, X } from 'lucide-react';
+import { Radio, Search, Send, Users, X } from 'lucide-react';
 import type { Stream } from '../../../../hooks/useStream';
 
 type StartForm = {
@@ -304,6 +304,151 @@ export function InvitePlayersModal({
                   </div>
                 )}
               </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function ShareStreamModal({
+  open,
+  hostUsername,
+  friends,
+  isSharingToFollowers,
+  sendingFriendUserId,
+  onClose,
+  onShareToFriend,
+  onShareToFollowers,
+}: {
+  open: boolean;
+  hostUsername?: string;
+  friends: Array<{
+    id: string;
+    username: string;
+    fullName?: string;
+    avatarUrl?: string;
+  }>;
+  isSharingToFollowers: boolean;
+  sendingFriendUserId: string | null;
+  onClose: () => void;
+  onShareToFriend: (targetUserId: string) => void;
+  onShareToFollowers: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredFriends = useMemo(
+    () =>
+      friends.filter((friend) => {
+        const haystack = `${friend.username} ${friend.fullName ?? ''}`.toLowerCase();
+        return haystack.includes(normalizedQuery);
+      }),
+    [friends, normalizedQuery],
+  );
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-[#0f0b21]/88 p-6 backdrop-blur-md">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.92, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: 20 }}
+            className="relative w-full max-w-lg rounded-[2.5rem] border border-white/10 bg-brand-deep p-6 shadow-2xl sm:p-8"
+          >
+            <button onClick={onClose} className="absolute right-6 top-6 text-zinc-500 hover:text-white">
+              <X size={22} />
+            </button>
+
+            <div className="pr-10">
+              <p className="text-[10px] font-black uppercase tracking-[0.28em] text-brand-accent">
+                Share Live
+              </p>
+              <h3 className="mt-3 text-2xl font-black uppercase italic text-white">
+                Send this stream out
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                Share {hostUsername ? `@${hostUsername}` : 'this live'} directly with friends or send it to all followers at once.
+              </p>
+            </div>
+
+            <div className="mt-6 rounded-[2rem] border border-white/10 bg-white/5 p-4">
+              <button
+                type="button"
+                onClick={onShareToFollowers}
+                disabled={isSharingToFollowers || friends.length === 0}
+                className="flex w-full items-center justify-between rounded-[1.5rem] border border-white/10 bg-black/20 px-4 py-4 text-left transition-colors hover:bg-white/5 disabled:opacity-50"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-primary/20 text-brand-primary">
+                    <Users size={20} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black uppercase italic text-white">Share To Followers</p>
+                    <p className="mt-1 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                      Send to {friends.length} connected {friends.length === 1 ? 'friend' : 'friends'}
+                    </p>
+                  </div>
+                </div>
+                <span className="rounded-xl bg-brand-primary px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white">
+                  {isSharingToFollowers ? 'Sending...' : 'Send'}
+                </span>
+              </button>
+            </div>
+
+            <div className="mt-6">
+              <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search friends"
+                  className="w-full rounded-2xl border border-white/10 bg-black/30 py-4 pl-12 pr-4 text-sm text-white placeholder:text-zinc-500 focus:border-brand-primary/50 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 max-h-[24rem] space-y-3 overflow-y-auto pr-1">
+              {filteredFriends.length ? (
+                filteredFriends.map((friend) => (
+                  <div
+                    key={friend.id}
+                    className="flex items-center justify-between gap-3 rounded-[1.5rem] border border-white/10 bg-white/5 p-3"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="h-12 w-12 overflow-hidden rounded-2xl border border-white/10">
+                        <img
+                          src={friend.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.username}`}
+                          alt={friend.username}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-white">
+                          {friend.fullName || friend.username}
+                        </p>
+                        <p className="truncate text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                          @{friend.username}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onShareToFriend(friend.id)}
+                      disabled={sendingFriendUserId === friend.id || isSharingToFollowers}
+                      className="inline-flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-brand-accent hover:text-black disabled:opacity-50"
+                    >
+                      <Send size={14} />
+                      {sendingFriendUserId === friend.id ? 'Sending...' : 'Send'}
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-[1.75rem] border border-white/10 bg-white/5 px-5 py-10 text-center text-sm text-zinc-500">
+                  {friends.length ? 'No matching friends found.' : 'No friends available to share with yet.'}
+                </div>
+              )}
             </div>
           </motion.div>
         </div>

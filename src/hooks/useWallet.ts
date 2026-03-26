@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/axios';
+import { api, getAccessToken } from '../api/axios';
 
 export type WalletSnapshot = {
   wallet: {
@@ -25,6 +25,13 @@ export function useWallet(autoLoad = true) {
   const [error, setError] = useState<string | null>(null);
 
   const fetchWallet = async () => {
+    if (!getAccessToken()) {
+      setWalletData(null);
+      setError(null);
+      setLoading(false);
+      return null;
+    }
+
     try {
       setLoading(true);
       const { data } = await api.get<WalletSnapshot>('/wallet/me');

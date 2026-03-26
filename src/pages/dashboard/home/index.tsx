@@ -12,12 +12,13 @@ import {
   DollarSign,
   RefreshCcw,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 import { useGames } from '../../../hooks/useGames';
 import { usePledges } from '../../../hooks/usePledges';
 import { useStream } from '../../../hooks/useStream';
 import { useWallet } from '../../../hooks/useWallet';
+import { useToast } from '../../../components/ToastProvider';
 
 function formatViewers(value: number) {
   return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : `${value}`;
@@ -26,8 +27,11 @@ function formatViewers(value: number) {
 export default function Home() {
   const [search, setSearch] = useState('');
   const [activeStreamIndex, setActiveStreamIndex] = useState(0);
-  const { user } = useAuth();
-  const { walletData } = useWallet(true);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const toast = useToast();
+  const { user, isAuthenticated } = useAuth();
+  const { walletData } = useWallet(isAuthenticated);
   const { featuredGames, loading: gamesLoading, error: gamesError, fetchGames, fetchFeaturedGames } = useGames({ search });
   const { activities, loading: pledgesLoading, error: pledgesError, fetchMatches } = usePledges(true);
   const { activeStreams, loading: streamsLoading, error: streamsError, fetchActiveStreams } = useStream();
@@ -61,6 +65,11 @@ export default function Home() {
   };
 
   const canBrowseStreams = activeStreams.length > 1 && !activeParticipationStream;
+
+  const requireLogin = (message: string) => {
+    toast.info(message, { title: 'Login Required' });
+    navigate('/login', { state: { from: location } });
+  };
 
   const showPreviousStream = () => {
     if (!canBrowseStreams) {
@@ -106,18 +115,26 @@ export default function Home() {
           >
             <RefreshCcw size={18} className="text-zinc-400" />
           </button>
-          <Link
-            to="/stream?start=1"
+          <button
+            type="button"
+            onClick={() => {
+              if (!isAuthenticated) {
+                requireLogin('Log in first to start a live stream.');
+                return;
+              }
+
+              navigate('/stream?start=1');
+            }}
             className="inline-flex h-12 items-center justify-center rounded-2xl bg-brand-primary px-5 text-[10px] font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-brand-accent hover:text-black"
           >
             Go Live
-          </Link>
+          </button>
           <div className="flex items-center gap-3 bg-brand-primary/10 border border-brand-primary/20 px-4 py-2.5 rounded-2xl">
             <div className="w-6 h-6 bg-brand-primary rounded-lg flex items-center justify-center">
               <Coins size={14} className="text-white" />
             </div>
             <span className="text-sm font-black text-white">
-              {(walletData?.wallet.igcBalance ?? 0).toLocaleString()} <span className="text-brand-primary">IGC</span>
+              {(walletData?.wallet.igcBalance ?? 1500).toLocaleString()} <span className="text-brand-primary">IGC</span>
             </span>
           </div>
         </div>
@@ -201,19 +218,21 @@ export default function Home() {
 
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
-                  <Link
-                    to={`/stream?streamId=${topStream._id}`}
+                  <button
+                    type="button"
+                    onClick={() => requireLogin('Log in first to watch or join a live stream.')}
                     className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-primary text-white shadow-2xl shadow-brand-primary/40 transition-transform hover:scale-110 group-hover:bg-brand-accent group-hover:text-black"
                   >
                     <Play size={32} className="fill-current ml-1" />
-                  </Link>
+                  </button>
                   <div className="flex flex-wrap items-center justify-center gap-3 px-4">
-                    <Link
-                      to={`/stream?streamId=${topStream._id}`}
+                    <button
+                      type="button"
+                      onClick={() => requireLogin('Log in first to watch or join a live stream.')}
                       className="rounded-full border border-white/15 bg-black/35 px-4 py-2 text-[10px] font-black uppercase tracking-[0.2em] text-white backdrop-blur-md transition-colors hover:bg-white/15"
                     >
                       Watch This Stream
-                    </Link>
+                    </button>
                     {canBrowseStreams && (
                       <button
                         onClick={showNextStream}
@@ -228,8 +247,9 @@ export default function Home() {
             </div>
 
             {secondaryStream && (
-              <Link
-                to={`/stream?streamId=${secondaryStream._id}`}
+              <button
+                type="button"
+                onClick={() => requireLogin('Log in first to watch or join a live stream.')}
                 className="lg:col-span-3 hidden lg:block relative rounded-[2.5rem] overflow-hidden border border-white/10 transition-transform hover:-translate-y-1"
               >
                 <img
@@ -251,7 +271,7 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-              </Link>
+              </button>
             )}
           </div>
         )}
@@ -335,9 +355,13 @@ export default function Home() {
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent" />
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Link to={`/play?gameId=${game._id}`} className="w-12 h-12 bg-brand-primary rounded-full flex items-center justify-center shadow-xl">
+                  <button
+                    type="button"
+                    onClick={() => requireLogin('Log in first to open and play games.')}
+                    className="w-12 h-12 bg-brand-primary rounded-full flex items-center justify-center shadow-xl"
+                  >
                     <Play size={20} className="text-white fill-current ml-1" />
-                  </Link>
+                  </button>
                 </div>
                 <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-xl">
                   <span className="text-[10px] font-bold text-white uppercase tracking-widest">{game.genre}</span>
@@ -353,9 +377,13 @@ export default function Home() {
                     <TrendingUp size={12} className="text-brand-primary" /> {game.liveStreams} Live Streams
                   </div>
                 </div>
-                <Link to={`/play?gameId=${game._id}`} className="block w-full bg-white/5 border border-white/10 text-white py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-brand-primary transition-all text-center">
+                <button
+                  type="button"
+                  onClick={() => requireLogin('Log in first to open and play games.')}
+                  className="block w-full bg-white/5 border border-white/10 text-white py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] hover:bg-brand-primary transition-all text-center"
+                >
                   View Game
-                </Link>
+                </button>
               </div>
             </motion.div>
           ))}
