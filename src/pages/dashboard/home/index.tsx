@@ -158,7 +158,7 @@ export default function Home() {
       </header>
 
       {(gamesError || pledgesError || streamsError) && (
-        <div className="rounded-[2rem] border border-rose-500/20 bg-rose-500/10 px-6 py-4 text-sm text-rose-200">
+        <div className="rounded-4xl border border-rose-500/20 bg-rose-500/10 px-6 py-4 text-sm text-rose-200">
           {streamsError ?? pledgesError ?? gamesError}
         </div>
       )}
@@ -201,14 +201,14 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-9 relative group rounded-[2.5rem] overflow-hidden border border-white/10 aspect-video lg:aspect-auto lg:h-[400px]">
+            <div className="lg:col-span-9 relative group rounded-[2.5rem] overflow-hidden border border-white/10 aspect-video lg:aspect-auto lg:h-100">
               <img
                 src={topStream.participants[0]?.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${topStream.participants[0]?.username ?? topStream.title}`}
                 alt={topStream.title}
                 className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                 referrerPolicy="no-referrer"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+              <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent" />
 
               <div className="absolute top-6 left-6 flex flex-col gap-4">
                 <div className="bg-white/10 backdrop-blur-md border border-white/20 px-4 py-2 rounded-xl inline-flex items-center gap-2">
@@ -275,7 +275,7 @@ export default function Home() {
                   className="absolute inset-0 w-full h-full object-cover opacity-40 grayscale"
                   referrerPolicy="no-referrer"
                 />
-                <div className="absolute inset-0 bg-gradient-to-l from-rose-500/20 to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-l from-rose-500/20 to-transparent" />
                 <div className="absolute bottom-6 left-6 right-6">
                   <p className="text-xs font-black text-white uppercase tracking-widest mb-2">{secondaryStream.title}</p>
                   <div className="flex items-center gap-2">
@@ -350,7 +350,7 @@ export default function Home() {
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                   referrerPolicy="no-referrer"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-t from-[#0f0b21] via-transparent to-transparent" />
                 <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-xl">
                   <div className="w-6 h-6 rounded-full overflow-hidden border border-brand-primary">
                     <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${activity.hostUsername}`} alt={activity.hostUsername} />
@@ -380,7 +380,7 @@ export default function Home() {
         </div>
 
         {!displayedActivities.length && !pledgesLoading && (
-          <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
+          <div className="rounded-4xl border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
             No pledge activities available.
           </div>
         )}
@@ -406,7 +406,7 @@ export default function Home() {
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                   referrerPolicy="no-referrer"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#0f0b21] via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-t from-[#0f0b21] via-transparent to-transparent" />
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                   <button
                     type="button"
@@ -443,7 +443,7 @@ export default function Home() {
         </div>
 
         {!displayedGames.length && !gamesLoading && (
-          <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
+          <div className="rounded-4xl border border-white/10 bg-white/5 px-8 py-12 text-center text-zinc-500">
             No games matched your current search.
           </div>
         )}
