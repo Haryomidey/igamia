@@ -4,8 +4,12 @@ import {
   Heart,
   ImagePlus,
   MessageCircle,
+  MoreHorizontal,
   RefreshCcw,
   Search,
+  Send,
+  Share2,
+  Sparkles,
   UserPlus,
   Video,
   X,
@@ -28,6 +32,11 @@ type PendingMedia = {
   previewUrl: string;
 };
 
+type ActivePostAction = {
+  postId: string;
+  mode: 'menu' | 'share' | 'boost';
+};
+
 export default function Social() {
   const [activeTab, setActiveTab] = useState<CommunityTab>('feed');
   const [selectedGamer, setSelectedGamer] = useState<SocialUser | null>(null);
@@ -39,11 +48,21 @@ export default function Social() {
   const [sendingRequestUserId, setSendingRequestUserId] = useState<string | null>(null);
   const [acceptingRequestId, setAcceptingRequestId] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
+  const [activePostAction, setActivePostAction] = useState<ActivePostAction | null>(null);
+  const [sharingPostId, setSharingPostId] = useState<string | null>(null);
+  const [boostingPostId, setBoostingPostId] = useState<string | null>(null);
+  const [reportingPostId, setReportingPostId] = useState<string | null>(null);
+  const [boostForm, setBoostForm] = useState({
+    minAge: '',
+    maxAge: '',
+    location: '',
+    preferences: '',
+  });
   const pendingPreviewUrlRef = useRef<string | null>(null);
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   const {
     discoverUsers,
@@ -57,6 +76,9 @@ export default function Social() {
     fetchSocial,
     createPost,
     togglePostLike,
+    sharePostToFollowers,
+    boostPost,
+    reportPost,
   } = useSocial(true);
   const { walletData, gift } = useWallet(isAuthenticated);
   const { uploadMedia } = useMediaUpload();
@@ -250,6 +272,10 @@ export default function Social() {
   ];
 
   const showFeed = activeTab === 'feed';
+  const activePost = useMemo(
+    () => feed.find((post) => post._id === activePostAction?.postId) ?? null,
+    [activePostAction?.postId, feed],
+  );
 
   return (
     <div className="space-y-6 pb-12 sm:space-y-8">
@@ -399,21 +425,99 @@ export default function Social() {
                   key={post._id}
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="rounded-[2rem] border border-white/10 bg-white/5 p-5 sm:rounded-[2.5rem] sm:p-6"
+                  className="relative rounded-[2rem] border border-white/10 bg-white/5 p-5 sm:rounded-[2.5rem] sm:p-6"
                 >
-                  <div className="flex items-center gap-4">
-                    <img
-                      src={post.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.username}`}
-                      alt={post.username}
-                      className="h-12 w-12 rounded-full border border-white/10 object-cover"
-                    />
-                    <div>
-                      <p className="break-words font-black text-white">{post.userFullName || post.username}</p>
-                      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
-                        @{post.username} • {post.createdAt ? new Date(post.createdAt).toLocaleString() : 'Now'}
-                      </p>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <img
+                        src={post.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.username}`}
+                        alt={post.username}
+                        className="h-12 w-12 rounded-full border border-white/10 object-cover"
+                      />
+                      <div>
+                        <p className="break-words font-black text-white">{post.userFullName || post.username}</p>
+                        <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                          @{post.username} • {post.createdAt ? new Date(post.createdAt).toLocaleString() : 'Now'}
+                        </p>
+                        {post.boost?.active && (
+                          <p className="mt-2 inline-flex rounded-full bg-brand-accent/15 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-brand-accent">
+                            Boost Active
+                          </p>
+                        )}
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActivePostAction((current) =>
+                          current?.postId === post._id && current.mode === 'menu'
+                            ? null
+                            : { postId: post._id, mode: 'menu' },
+                        )
+                      }
+                      className="rounded-full border border-white/10 bg-white/5 p-3 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
                   </div>
+                  {activePostAction?.postId === post._id && activePostAction.mode === 'menu' && (
+                    <div className="absolute right-5 top-16 z-20 flex min-w-44 flex-col gap-2 rounded-[1.25rem] border border-white/10 bg-[#171330]/95 p-2 shadow-2xl backdrop-blur-xl sm:right-6">
+                      {post.userId !== user?._id && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={reportingPostId === post._id}
+                            onClick={async () => {
+                              if (!isAuthenticated) {
+                                requireLogin('Log in first to flag posts.');
+                                return;
+                              }
+
+                              try {
+                                setReportingPostId(post._id);
+                                await reportPost(post._id);
+                                toast.success('Post flagged for review.');
+                                setActivePostAction(null);
+                              } catch (err: any) {
+                                toast.error(err?.response?.data?.message ?? 'Unable to flag post.');
+                              } finally {
+                                setReportingPostId(null);
+                              }
+                            }}
+                            className="inline-flex items-center justify-between rounded-xl px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-white/10 disabled:opacity-50"
+                          >
+                            <span>Flag Post</span>
+                            <MoreHorizontal size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={reportingPostId === post._id}
+                            onClick={async () => {
+                              if (!isAuthenticated) {
+                                requireLogin('Log in first to report posts.');
+                                return;
+                              }
+
+                              try {
+                                setReportingPostId(post._id);
+                                await reportPost(post._id);
+                                toast.success('Post reported for review.');
+                                setActivePostAction(null);
+                              } catch (err: any) {
+                                toast.error(err?.response?.data?.message ?? 'Unable to report post.');
+                              } finally {
+                                setReportingPostId(null);
+                              }
+                            }}
+                            className="inline-flex items-center justify-between rounded-xl px-3 py-2 text-left text-[10px] font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-white/10 disabled:opacity-50"
+                          >
+                            <span>{reportingPostId === post._id ? 'Reporting...' : 'Report Post'}</span>
+                            <MoreHorizontal size={14} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {post.content ? <p className="mt-5 break-words text-sm leading-relaxed text-zinc-200 sm:text-[15px]">{post.content}</p> : null}
                   {post.mediaUrl ? (
                     post.mediaType === 'video' ? (
@@ -449,6 +553,32 @@ export default function Social() {
                       <MessageCircle size={14} />
                       {post.commentsCount ?? 0}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setActivePostAction({ postId: post._id, mode: 'share' })}
+                      className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-300"
+                    >
+                      <Share2 size={14} />
+                      {post.sharesCount ?? 0}
+                    </button>
+                    {post.userId === user?._id && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBoostForm({
+                            minAge: post.boost?.targeting.minAge?.toString() ?? '',
+                            maxAge: post.boost?.targeting.maxAge?.toString() ?? '',
+                            location: post.boost?.targeting.location ?? '',
+                            preferences: (post.boost?.targeting.preferences ?? []).join(', '),
+                          });
+                          setActivePostAction({ postId: post._id, mode: 'boost' });
+                        }}
+                        className="inline-flex items-center gap-2 rounded-full bg-brand-primary/15 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-brand-primary"
+                      >
+                        <Sparkles size={14} />
+                        Boost
+                      </button>
+                    )}
                   </div>
                 </motion.article>
               ))}
@@ -680,6 +810,153 @@ export default function Social() {
                   Gifts and direct messages are available only after the connection request is accepted.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activePost && activePostAction?.mode === 'share' && (
+        <div className="fixed inset-0 z-[110] bg-[#0f0b21]/88 p-4 backdrop-blur-md">
+          <div className="flex min-h-full items-center justify-center">
+            <div className="w-full max-w-lg rounded-[2.5rem] border border-white/10 bg-[#171330] p-6 shadow-2xl sm:p-8">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Share Post</p>
+                  <h3 className="mt-3 text-xl font-black uppercase italic text-white">Send to followers</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+                    Share this post with your connected followers so it reaches more people instantly.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActivePostAction(null)}
+                  className="rounded-full border border-white/10 bg-white/5 p-3 text-zinc-400"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="mt-6 rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
+                <p className="text-sm font-black text-white">{activePost.userFullName || activePost.username}</p>
+                <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-zinc-400">
+                  {activePost.content || 'Media post'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={!isAuthenticated || sharingPostId === activePost._id}
+                onClick={async () => {
+                  if (!isAuthenticated) {
+                    requireLogin('Log in first to share community posts.');
+                    return;
+                  }
+
+                  try {
+                    setSharingPostId(activePost._id);
+                    const result = await sharePostToFollowers(activePost._id);
+                    toast.success(`Post shared to ${result.sharedCount} follower${result.sharedCount === 1 ? '' : 's'}.`);
+                    setActivePostAction(null);
+                  } catch (err: any) {
+                    toast.error(err?.response?.data?.message ?? 'Unable to share post.');
+                  } finally {
+                    setSharingPostId(null);
+                  }
+                }}
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-[1.5rem] bg-brand-primary px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
+              >
+                <Send size={16} />
+                {sharingPostId === activePost._id ? 'Sharing...' : 'Share To Followers'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activePost && activePostAction?.mode === 'boost' && (
+        <div className="fixed inset-0 z-[110] bg-[#0f0b21]/88 p-4 backdrop-blur-md">
+          <div className="flex min-h-full items-center justify-center">
+            <div className="w-full max-w-xl rounded-[2.5rem] border border-white/10 bg-[#171330] p-6 shadow-2xl sm:p-8">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Boost Post</p>
+                  <h3 className="mt-3 text-xl font-black uppercase italic text-white">Target more audience</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+                    Promote this post to more viewers based on age, location, and player preferences.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActivePostAction(null)}
+                  className="rounded-full border border-white/10 bg-white/5 p-3 text-zinc-400"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                <input
+                  type="number"
+                  min="13"
+                  value={boostForm.minAge}
+                  onChange={(event) => setBoostForm((current) => ({ ...current, minAge: event.target.value }))}
+                  placeholder="Minimum age"
+                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none placeholder:text-zinc-600"
+                />
+                <input
+                  type="number"
+                  min="13"
+                  value={boostForm.maxAge}
+                  onChange={(event) => setBoostForm((current) => ({ ...current, maxAge: event.target.value }))}
+                  placeholder="Maximum age"
+                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none placeholder:text-zinc-600"
+                />
+                <input
+                  type="text"
+                  value={boostForm.location}
+                  onChange={(event) => setBoostForm((current) => ({ ...current, location: event.target.value }))}
+                  placeholder="Location"
+                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none placeholder:text-zinc-600"
+                />
+                <input
+                  type="text"
+                  value={boostForm.preferences}
+                  onChange={(event) => setBoostForm((current) => ({ ...current, preferences: event.target.value }))}
+                  placeholder="Preferences, comma separated"
+                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none placeholder:text-zinc-600"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={!isAuthenticated || boostingPostId === activePost._id}
+                onClick={async () => {
+                  if (!isAuthenticated) {
+                    requireLogin('Log in first to boost posts.');
+                    return;
+                  }
+
+                  try {
+                    setBoostingPostId(activePost._id);
+                    await boostPost(activePost._id, {
+                      minAge: boostForm.minAge ? Number(boostForm.minAge) : null,
+                      maxAge: boostForm.maxAge ? Number(boostForm.maxAge) : null,
+                      location: boostForm.location,
+                      preferences: boostForm.preferences.split(',').map((entry) => entry.trim()).filter(Boolean),
+                    });
+                    toast.success('Post boost updated.');
+                    setActivePostAction(null);
+                  } catch (err: any) {
+                    toast.error(err?.response?.data?.message ?? 'Unable to boost post.');
+                  } finally {
+                    setBoostingPostId(null);
+                  }
+                }}
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-[1.5rem] bg-brand-primary px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-white disabled:opacity-50"
+              >
+                <Sparkles size={16} />
+                {boostingPostId === activePost._id ? 'Boosting...' : 'Boost Post'}
+              </button>
             </div>
           </div>
         </div>

@@ -236,7 +236,10 @@ export function InvitePlayersModal({
             <button onClick={onClose} className="absolute right-4 top-4 text-zinc-500 hover:text-white">
               <X size={18} />
             </button>
-            <h3 className="mb-4 text-sm font-black uppercase italic text-white sm:text-base">Invite Players</h3>
+            <h3 className="mb-2 text-sm font-black uppercase italic text-white sm:text-base">Requests & Invite</h3>
+            <p className="mb-4 pr-6 text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500 sm:text-[11px]">
+              Review viewer join requests or invite more streamers.
+            </p>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}

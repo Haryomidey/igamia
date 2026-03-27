@@ -19,6 +19,40 @@ export class StreamsController {
     private readonly socialGateway: SocialGateway,
   ) {}
 
+  private serializeParticipants(stream: {
+    participants: Array<{
+      userId: { toString(): string };
+      role: 'host' | 'guest' | 'invited';
+      username: string;
+      avatarUrl?: string;
+      joinedAt: Date | string;
+    }>;
+  }) {
+    return stream.participants.map((participant) => ({
+      userId: participant.userId.toString(),
+      role: participant.role,
+      username: participant.username,
+      avatarUrl: participant.avatarUrl,
+      joinedAt: participant.joinedAt,
+    }));
+  }
+
+  private serializeJoinRequests(stream: {
+    joinRequests: Array<{
+      userId: { toString(): string };
+      username: string;
+      avatarUrl?: string;
+      requestedAt: Date | string;
+    }>;
+  }) {
+    return stream.joinRequests.map((request) => ({
+      userId: request.userId.toString(),
+      username: request.username,
+      avatarUrl: request.avatarUrl,
+      requestedAt: request.requestedAt,
+    }));
+  }
+
   @Get('active')
   listActiveStreams() {
     return this.streamsService.listActiveStreams();
@@ -133,9 +167,11 @@ export class StreamsController {
       streamId,
       joinRequests: result.stream.joinRequests,
     });
-    this.streamsGateway.server.to(streamId).emit('streamParticipantUpdated', {
-      streamId,
-      participants: result.stream.participants,
+    this.streamsGateway.emitParticipantUpdated(streamId, {
+      participants: this.serializeParticipants(result.stream),
+      joinRequests: this.serializeJoinRequests(result.stream),
+      orientation: result.stream.orientation,
+      mode: result.stream.mode,
     });
     this.streamsGateway.emitStreamJoinRequestResolved(requestUserId, {
       streamId,
@@ -176,9 +212,11 @@ export class StreamsController {
     @CurrentUser() user: { sub: string },
   ) {
     const result = await this.streamsService.acceptInvite(streamId, user.sub);
-    this.streamsGateway.server.to(streamId).emit('streamParticipantUpdated', {
-      streamId,
-      participants: result.stream.participants,
+    this.streamsGateway.emitParticipantUpdated(streamId, {
+      participants: this.serializeParticipants(result.stream),
+      joinRequests: this.serializeJoinRequests(result.stream),
+      orientation: result.stream.orientation,
+      mode: result.stream.mode,
     });
     return result;
   }
@@ -243,10 +281,11 @@ export class StreamsController {
     @Body() dto: UpdateStreamLayoutDto,
   ) {
     const result = await this.streamsService.updateStreamLayout(streamId, user.sub, dto);
-    this.streamsGateway.server.to(streamId).emit('streamParticipantUpdated', {
-      streamId,
-      participants: result.stream.participants,
+    this.streamsGateway.emitParticipantUpdated(streamId, {
+      participants: this.serializeParticipants(result.stream),
+      joinRequests: this.serializeJoinRequests(result.stream),
       orientation: result.stream.orientation,
+      mode: result.stream.mode,
     });
     return result;
   }

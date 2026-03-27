@@ -51,6 +51,12 @@ type StreamEndedOverlay = {
   countdownSeconds: number;
 };
 
+type LiveParticipantSnapshot = {
+  userId: string;
+  username: string;
+  isLocal: boolean;
+};
+
 function participantLabel(participant: Participant) {
   return participant.name || participant.identity || 'Streamer';
 }
@@ -184,6 +190,7 @@ export default function LiveStream() {
   const [recordingDurationSeconds, setRecordingDurationSeconds] = useState(0);
   const [videoTiles, setVideoTiles] = useState<VideoTile[]>([]);
   const [audioTracks, setAudioTracks] = useState<Array<{ id: string; track: Track }>>([]);
+  const [liveParticipants, setLiveParticipants] = useState<Record<string, LiveParticipantSnapshot>>({});
   const [floatingHearts, setFloatingHearts] = useState<FloatingHeart[]>([]);
   const [activityOverlays, setActivityOverlays] = useState<ActivityOverlay[]>([]);
   const [likeNotices, setLikeNotices] = useState<LikeNotice[]>([]);
@@ -195,11 +202,13 @@ export default function LiveStream() {
   const [streamEndedOverlay, setStreamEndedOverlay] = useState<StreamEndedOverlay | null>(null);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraPaused, setIsCameraPaused] = useState(false);
+  const reconnectInFlightRef = useRef(false);
+  const roomSessionRef = useRef(0);
   const [startForm, setStartForm] = useState({
     title: '',
     description: '',
     category: 'General',
-    orientation: 'vertical' as 'vertical' | 'horizontal' | 'pip',
+    orientation: 'horizontal' as 'vertical' | 'horizontal' | 'pip',
   });
   const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const livekitRoomRef = useRef<Room | null>(null);
@@ -207,6 +216,9 @@ export default function LiveStream() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const stageVideoElementsRef = useRef<Record<string, HTMLVideoElement | null>>({});
   const publishCapabilityRef = useRef(false);
+  const joinRequestCountRef = useRef(0);
+  const autoReconnectTimeoutRef = useRef<number | null>(null);
+  const autoReconnectAttemptsRef = useRef(0);
 
   useEffect(() => {
     void fetchActiveStreams();
@@ -274,15 +286,39 @@ export default function LiveStream() {
     () => Boolean(host?.userId && friends.some((friend) => friend.id === host.userId)),
     [friends, host?.userId],
   );
+  const stageParticipants = useMemo(() => {
+    const activeIds = new Set(Object.keys(liveParticipants));
+    return (stream?.participants ?? []).filter(
+      (participant) => participant.role !== 'invited' && activeIds.has(participant.userId),
+    );
+  }, [liveParticipants, stream?.participants]);
+  const visibleVideoTiles = useMemo(() => {
+    const activeIds = new Set(stageParticipants.map((participant) => participant.userId));
+    return videoTiles.filter((tile) => activeIds.has(tile.participantUserId));
+  }, [stageParticipants, videoTiles]);
   const recordingDurationLabel = useMemo(
     () => (isRecording ? formatElapsedDuration(recordingDurationSeconds) : null),
     [isRecording, recordingDurationSeconds],
   );
   const primaryTile = useMemo(
-    () => videoTiles.find((tile) => tile.participantUserId === user?._id) ?? videoTiles[0] ?? null,
-    [user?._id, videoTiles],
+    () => visibleVideoTiles.find((tile) => tile.participantUserId === user?._id) ?? visibleVideoTiles[0] ?? null,
+    [user?._id, visibleVideoTiles],
   );
   const isStreamEndedForViewer = Boolean(streamEndedOverlay && !isHostView);
+
+  const redirectToPreferredStream = async (options?: { replace?: boolean; excludeStreamId?: string }) => {
+    const nextStreams = await fetchActiveStreams();
+    const visibleStreams = nextStreams.filter((entry) => entry._id !== options?.excludeStreamId);
+    const preferredStream =
+      visibleStreams.find((entry) => entry.hostUserId === user?._id) ?? visibleStreams[0] ?? null;
+
+    if (preferredStream) {
+      navigate(`/stream?streamId=${preferredStream._id}`, { replace: options?.replace });
+      return true;
+    }
+
+    return false;
+  };
 
   useEffect(() => {
     if (!resolvedStreamId) {
@@ -309,6 +345,18 @@ export default function LiveStream() {
 
     void handleReconnectToLive();
   }, [currentParticipant?.role, resolvedStreamId]);
+
+  useEffect(() => {
+    const nextCount = pendingJoinRequests.length;
+    const hadNewRequest = isHostView && nextCount > joinRequestCountRef.current;
+    joinRequestCountRef.current = nextCount;
+
+    if (!hadNewRequest) {
+      return;
+    }
+
+    setIsInviting(true);
+  }, [isHostView, pendingJoinRequests.length]);
 
   useEffect(() => {
     if (!isPledgeStream || !stream?.matchId) {
@@ -394,6 +442,7 @@ export default function LiveStream() {
       !recentViewerJoin ||
       recentViewerJoin.streamId !== resolvedStreamId ||
       !recentViewerJoin.joinedUsername ||
+      recentViewerJoin.joinedUserId === host?.userId ||
       recentViewerJoin.joinedUserId === user?._id ||
       recentViewerJoin.joinedUsername === user?.username
     ) {
@@ -410,7 +459,7 @@ export default function LiveStream() {
     }, 5000);
 
     return () => window.clearTimeout(timeout);
-  }, [recentViewerJoin, resolvedStreamId, user?.username]);
+  }, [host?.userId, recentViewerJoin, resolvedStreamId, user?._id, user?.username]);
 
   useEffect(() => {
     if (!recentMediaState || recentMediaState.streamId !== resolvedStreamId) {
@@ -432,11 +481,24 @@ export default function LiveStream() {
       return;
     }
 
+    setMediaStates((current) => {
+      const next = { ...current };
+      delete next[recentParticipantRemoved.removedUserId];
+      return next;
+    });
+
     if (recentParticipantRemoved.removedUserId === user?._id) {
+      livekitRoomRef.current?.disconnect();
+      livekitRoomRef.current = null;
+      setLiveParticipants({});
+      setVideoTiles([]);
+      setAudioTracks([]);
+      setIsMicMuted(true);
+      setIsCameraPaused(true);
       if (recentParticipantRemoved.reason === 'removed') {
         toast.info('You were removed from this live by the host.', { title: 'Removed From Live' });
       }
-      navigate('/home');
+      void handleReconnectToLive();
       return;
     }
 
@@ -457,6 +519,9 @@ export default function LiveStream() {
       return;
     }
 
+    livekitRoomRef.current?.disconnect();
+    livekitRoomRef.current = null;
+    setLiveParticipants({});
     setVideoTiles([]);
     setAudioTracks([]);
     setActivityOverlays([]);
@@ -483,10 +548,11 @@ export default function LiveStream() {
 
     if (streamEndedOverlay.countdownSeconds <= 0) {
       const redirectAfterEnd = async () => {
-        const nextStreams = await fetchActiveStreams();
-        const nextStream = nextStreams.find((entry) => entry._id !== resolvedStreamId);
-        if (nextStream) {
-          navigate(`/stream?streamId=${nextStream._id}`, { replace: true });
+        const redirected = await redirectToPreferredStream({
+          excludeStreamId: resolvedStreamId,
+          replace: true,
+        });
+        if (redirected) {
           return;
         }
 
@@ -511,7 +577,7 @@ export default function LiveStream() {
     }, 1000);
 
     return () => window.clearTimeout(timeout);
-  }, [fetchActiveStreams, isHostView, navigate, resolvedStreamId, streamEndedOverlay]);
+  }, [fetchActiveStreams, isHostView, navigate, resolvedStreamId, streamEndedOverlay, user?._id]);
 
   useEffect(() => {
     if (!resolvedStreamId || !user?._id || !user.username) {
@@ -519,6 +585,31 @@ export default function LiveStream() {
     }
 
     let disposed = false;
+    const sessionId = roomSessionRef.current + 1;
+    roomSessionRef.current = sessionId;
+    const isCurrentSession = () => !disposed && roomSessionRef.current === sessionId;
+    const canHandleRoomEvent = (room: Room) => isCurrentSession() && livekitRoomRef.current === room;
+
+    const syncRoomParticipants = (room: Room) => {
+      const nextParticipants: Record<string, LiveParticipantSnapshot> = {};
+      const localUserId = resolveLiveParticipantUserId(room.localParticipant);
+      nextParticipants[localUserId] = {
+        userId: localUserId,
+        username: participantLabel(room.localParticipant),
+        isLocal: true,
+      };
+
+      room.remoteParticipants.forEach((participant) => {
+        const participantUserId = resolveLiveParticipantUserId(participant);
+        nextParticipants[participantUserId] = {
+          userId: participantUserId,
+          username: participantLabel(participant),
+          isLocal: false,
+        };
+      });
+
+      setLiveParticipants(nextParticipants);
+    };
 
     const addVideoTrack = (track: Track, participant: Participant, isLocal: boolean) => {
       if (track.kind !== Track.Kind.Video) {
@@ -533,6 +624,14 @@ export default function LiveStream() {
         next.sort((left, right) => Number(right.isLocal) - Number(left.isLocal));
         return next;
       });
+      setLiveParticipants((current) => ({
+        ...current,
+        [participantUserId]: {
+          userId: participantUserId,
+          username: participantLabel(participant),
+          isLocal,
+        },
+      }));
     };
 
     const removeTrack = (participant: Participant, publication?: TrackPublication) => {
@@ -546,6 +645,27 @@ export default function LiveStream() {
       setAudioTracks((current) => current.filter((entry) => entry.id !== id));
     };
 
+    const syncRemoteParticipantTracks = (participant: Participant) => {
+      participant.trackPublications.forEach((publication) => {
+        if (!publication.track) {
+          return;
+        }
+
+        const id = `${participant.sid}-${publication.trackSid}`;
+        if (publication.track.kind === Track.Kind.Video) {
+          addVideoTrack(publication.track, participant, false);
+          return;
+        }
+
+        if (publication.track.kind === Track.Kind.Audio) {
+          setAudioTracks((current) => [
+            ...current.filter((entry) => entry.id !== id),
+            { id, track: publication.track },
+          ]);
+        }
+      });
+    };
+
     const connectToRoom = async () => {
       setConnectionStatus('connecting');
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -556,6 +676,9 @@ export default function LiveStream() {
           livekitRoomRef.current = room;
 
           room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
             const id = `${participant.sid}-${publication.trackSid}`;
             if (track.kind === Track.Kind.Video) {
               addVideoTrack(track, participant, false);
@@ -567,59 +690,93 @@ export default function LiveStream() {
           });
 
           room.on(RoomEvent.TrackUnsubscribed, (_track, publication, participant) => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
             removeTrack(participant, publication);
           });
 
           room.on(RoomEvent.LocalTrackPublished, (publication, participant) => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
             if (publication.track?.kind === Track.Kind.Video) {
               addVideoTrack(publication.track, participant, true);
             }
           });
 
           room.on(RoomEvent.LocalTrackUnpublished, (publication, participant) => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
             removeTrack(participant, publication);
           });
 
           room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
+            const participantUserId = resolveLiveParticipantUserId(participant);
             setVideoTiles((current) => current.filter((tile) => !tile.id.startsWith(`${participant.sid}-`)));
             setAudioTracks((current) => current.filter((entry) => !entry.id.startsWith(`${participant.sid}-`)));
+            setLiveParticipants((current) => {
+              const next = { ...current };
+              delete next[participantUserId];
+              return next;
+            });
+          });
+
+          room.on(RoomEvent.ParticipantConnected, (participant) => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
+            const participantUserId = resolveLiveParticipantUserId(participant);
+            setLiveParticipants((current) => ({
+              ...current,
+              [participantUserId]: {
+                userId: participantUserId,
+                username: participantLabel(participant),
+                isLocal: false,
+              },
+            }));
+            syncRemoteParticipantTracks(participant);
           });
 
           room.on(RoomEvent.Reconnecting, () => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
             setConnectionStatus('connecting');
           });
 
           room.on(RoomEvent.Reconnected, () => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
             setConnectionStatus('connected');
+            syncRoomParticipants(room);
           });
 
           room.on(RoomEvent.Disconnected, () => {
+            if (!canHandleRoomEvent(room)) {
+              return;
+            }
             setConnectionStatus((current) => (disposed ? current : 'idle'));
+            setLiveParticipants({});
             setVideoTiles([]);
             setAudioTracks([]);
           });
 
-          await room.connect(details.url, details.token);
-          if (disposed) {
+          await room.connect(details.url, details.token, { autoSubscribe: true });
+          if (!isCurrentSession() || livekitRoomRef.current !== room) {
             await room.disconnect();
             return;
           }
 
           room.remoteParticipants.forEach((participant) => {
-            participant.trackPublications.forEach((publication) => {
-              if (!publication.track) {
-                return;
-              }
-              if (publication.track.kind === Track.Kind.Video) {
-                addVideoTrack(publication.track, participant, false);
-                return;
-              }
-              if (publication.track.kind === Track.Kind.Audio) {
-                const id = `${participant.sid}-${publication.trackSid}`;
-                setAudioTracks((current) => [...current.filter((entry) => entry.id !== id), { id, track: publication.track }]);
-              }
-            });
+            syncRemoteParticipantTracks(participant);
           });
+          syncRoomParticipants(room);
 
           room.localParticipant.videoTrackPublications.forEach((publication) => {
             if (publication.track) {
@@ -631,7 +788,13 @@ export default function LiveStream() {
 
           if (details.canPublish) {
             try {
+              if (!isCurrentSession() || livekitRoomRef.current !== room) {
+                return;
+              }
               await room.localParticipant.setCameraEnabled(true);
+              if (!isCurrentSession() || livekitRoomRef.current !== room) {
+                return;
+              }
               await room.localParticipant.setMicrophoneEnabled(true);
               setIsMicMuted(false);
               setIsCameraPaused(false);
@@ -661,7 +824,7 @@ export default function LiveStream() {
             livekitRoomRef.current = null;
           }
 
-          if (disposed) {
+          if (!isCurrentSession()) {
             return;
           }
 
@@ -682,6 +845,7 @@ export default function LiveStream() {
 
     return () => {
       disposed = true;
+      setLiveParticipants({});
       setVideoTiles([]);
       setAudioTracks([]);
       const room = livekitRoomRef.current;
@@ -719,6 +883,9 @@ export default function LiveStream() {
 
   useEffect(() => {
     return () => {
+      if (autoReconnectTimeoutRef.current) {
+        window.clearTimeout(autoReconnectTimeoutRef.current);
+      }
       mediaRecorderRef.current?.stop();
     };
   }, []);
@@ -875,7 +1042,6 @@ export default function LiveStream() {
     try {
       setIsSubmitting(true);
       await inviteStreamer(resolvedStreamId, targetUserId);
-      await fetchStream(resolvedStreamId);
       setIsInviting(false);
       toast.success('User invited to the live session.');
     } catch (err: any) {
@@ -893,8 +1059,6 @@ export default function LiveStream() {
     try {
       setIsSubmitting(true);
       await acceptInvite(resolvedStreamId);
-      await fetchStream(resolvedStreamId);
-      await handleReconnectToLive();
       toast.success('You joined the live.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to accept invite.');
@@ -911,7 +1075,6 @@ export default function LiveStream() {
     try {
       setIsSubmitting(true);
       await requestToJoinStream(resolvedStreamId);
-      await fetchStream(resolvedStreamId);
       toast.success('Your join request was sent.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to send join request.');
@@ -928,7 +1091,6 @@ export default function LiveStream() {
     try {
       setIsSubmitting(true);
       await cancelJoinRequest(resolvedStreamId);
-      await fetchStream(resolvedStreamId);
       toast.info('Your join request was removed.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to remove join request.');
@@ -945,7 +1107,6 @@ export default function LiveStream() {
     try {
       setIsSubmitting(true);
       await acceptJoinRequest(resolvedStreamId, requestUserId);
-      await fetchStream(resolvedStreamId);
       setIsInviting(false);
       toast.success('Viewer added to the live.');
     } catch (err: any) {
@@ -963,7 +1124,6 @@ export default function LiveStream() {
     try {
       setIsSubmitting(true);
       await declineJoinRequest(resolvedStreamId, requestUserId);
-      await fetchStream(resolvedStreamId);
       toast.info('Join request declined.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to decline join request.');
@@ -980,8 +1140,13 @@ export default function LiveStream() {
     try {
       setIsSubmitting(true);
       await leaveStreamParticipation(resolvedStreamId);
+      livekitRoomRef.current?.disconnect();
+      livekitRoomRef.current = null;
       toast.success(isInvitedPending ? 'Live invite declined.' : 'You left the live.');
-      navigate('/home');
+      const redirected = await redirectToPreferredStream({ excludeStreamId: resolvedStreamId });
+      if (!redirected) {
+        navigate('/home');
+      }
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to leave live.');
     } finally {
@@ -1046,8 +1211,18 @@ export default function LiveStream() {
       return;
     }
 
+    if (reconnectInFlightRef.current) {
+      return;
+    }
+
     try {
+      reconnectInFlightRef.current = true;
+      if (autoReconnectTimeoutRef.current) {
+        window.clearTimeout(autoReconnectTimeoutRef.current);
+        autoReconnectTimeoutRef.current = null;
+      }
       setConnectionStatus('connecting');
+      setLiveParticipants({});
       setVideoTiles([]);
       setAudioTracks([]);
       livekitRoomRef.current?.disconnect();
@@ -1060,8 +1235,50 @@ export default function LiveStream() {
     } catch (err: any) {
       setConnectionStatus('error');
       toast.error(err?.response?.data?.message ?? 'Unable to reconnect to the live.');
+    } finally {
+      reconnectInFlightRef.current = false;
     }
   };
+
+  useEffect(() => {
+    if (!resolvedStreamId || streamEndedOverlay) {
+      return;
+    }
+
+    if (reconnectInFlightRef.current) {
+      return;
+    }
+
+    if (connectionStatus === 'connected') {
+      autoReconnectAttemptsRef.current = 0;
+      if (autoReconnectTimeoutRef.current) {
+        window.clearTimeout(autoReconnectTimeoutRef.current);
+        autoReconnectTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    if (connectionStatus !== 'error' && connectionStatus !== 'idle') {
+      return;
+    }
+
+    if (autoReconnectAttemptsRef.current >= 3) {
+      return;
+    }
+
+    const delay = 1200 * (autoReconnectAttemptsRef.current + 1);
+    autoReconnectTimeoutRef.current = window.setTimeout(() => {
+      autoReconnectAttemptsRef.current += 1;
+      void handleReconnectToLive();
+    }, delay);
+
+    return () => {
+      if (autoReconnectTimeoutRef.current) {
+        window.clearTimeout(autoReconnectTimeoutRef.current);
+        autoReconnectTimeoutRef.current = null;
+      }
+    };
+  }, [connectionStatus, resolvedStreamId, streamEndedOverlay]);
 
   const persistRecordingBlob = async (blob: Blob) => {
     if (!resolvedStreamId) {
@@ -1306,14 +1523,56 @@ export default function LiveStream() {
     );
   }
 
+  if (stream?.status === 'ended') {
+    return (
+      <div className="fixed inset-0 overflow-hidden bg-[linear-gradient(180deg,#020202,#09070f_48%,#05050a)] px-6 py-10 text-white">
+        <div className="mx-auto flex min-h-full max-w-xl items-center justify-center">
+          <div className="w-full rounded-[3rem] border border-white/10 bg-[#141128] p-10 text-center shadow-2xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
+              Live Ended
+            </p>
+            <h1 className="mt-5 text-3xl font-black uppercase italic text-white">
+              {host?.username ?? 'This streamer'} ended the stream
+            </h1>
+            <p className="mt-4 text-sm leading-relaxed text-zinc-400">
+              This live session is no longer active. Open another live or head back home.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={() => navigate('/home')}
+                className="rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-white/10"
+              >
+                Back Home
+              </button>
+              <button
+                onClick={async () => {
+                  const redirected = await redirectToPreferredStream({
+                    excludeStreamId: resolvedStreamId,
+                    replace: true,
+                  });
+                  if (!redirected) {
+                    navigate('/home');
+                  }
+                }}
+                className="rounded-2xl bg-brand-primary px-6 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-brand-accent hover:text-black"
+              >
+                Open Live
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-[radial-gradient(circle_at_top,rgba(223,165,58,0.1),transparent_24%),linear-gradient(180deg,#020202,#09070f_48%,#05050a)] text-white">
       <div ref={audioContainerRef} className="hidden" aria-hidden="true" />
 
-      <div className="relative h-full w-full touch-manipulation" onClick={() => void handleLike()}>
+      <div className="relative h-full w-full touch-manipulation">
         <StreamStageGrid
-          participants={stream?.participants ?? []}
-          videoTiles={videoTiles}
+          participants={stageParticipants}
+          videoTiles={visibleVideoTiles}
           mediaStates={mediaStates}
           orientation={stream?.orientation ?? 'vertical'}
           canRemoveParticipants={canRemoveParticipants}
@@ -1398,6 +1657,7 @@ export default function LiveStream() {
           canOpenControls={isParticipantView}
           pendingJoinRequestsCount={isHostView ? pendingJoinRequests.length : 0}
           canOpenRequests={isHostView && !isPledgeStream}
+          canFollowHost={!isFollowingHost}
           activeParticipant={activeParticipant}
           onBack={() => navigate(-1)}
           onClose={() => navigate('/home')}

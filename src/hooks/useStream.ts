@@ -124,6 +124,33 @@ export function useStream() {
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
+  const patchCurrentStream = (
+    streamId: string,
+    updater: (current: Stream) => Stream,
+  ) => {
+    setStream((prev) => {
+      if (!prev || prev._id !== streamId) {
+        return prev;
+      }
+
+      return updater(prev);
+    });
+  };
+
+  const patchActiveStream = (
+    streamId: string,
+    updater: (current: Stream) => Stream,
+  ) => {
+    setActiveStreams((prev) =>
+      prev.map((entry) => (entry._id === streamId ? updater(entry) : entry)),
+    );
+  };
+
+  const syncStreamState = (nextStream: Stream) => {
+    setStream((prev) => (prev && prev._id === nextStream._id ? nextStream : prev));
+    patchActiveStream(nextStream._id, () => nextStream);
+  };
+
   const connect = () => {
     if (socketRef.current || !getAccessToken()) {
       return socketRef.current;
@@ -137,7 +164,8 @@ export function useStream() {
     });
 
     socketRef.current.on('streamLiked', (payload: StreamLikeEvent) => {
-      setStream((prev) => (prev ? { ...prev, likesCount: payload.likesCount } : prev));
+      patchCurrentStream(payload.streamId, (prev) => ({ ...prev, likesCount: payload.likesCount }));
+      patchActiveStream(payload.streamId, (prev) => ({ ...prev, likesCount: payload.likesCount }));
       setRecentLike(payload);
     });
 
@@ -148,39 +176,48 @@ export function useStream() {
       );
     });
 
-    socketRef.current.on('streamShared', (payload: { sharesCount: number }) => {
-      setStream((prev) => (prev ? { ...prev, sharesCount: payload.sharesCount } : prev));
+    socketRef.current.on('streamShared', (payload: { streamId: string; sharesCount: number }) => {
+      patchCurrentStream(payload.streamId, (prev) => ({ ...prev, sharesCount: payload.sharesCount }));
+      patchActiveStream(payload.streamId, (prev) => ({ ...prev, sharesCount: payload.sharesCount }));
     });
 
     socketRef.current.on('streamGifted', (payload: StreamGiftEvent) => {
-      setStream((prev) => (prev ? { ...prev, earningsUsd: payload.earningsNgn ?? prev.earningsUsd } : prev));
+      patchCurrentStream(payload.streamId, (prev) => ({
+        ...prev,
+        earningsUsd: payload.earningsNgn ?? prev.earningsUsd,
+      }));
       setRecentGift(payload);
     });
 
     socketRef.current.on('streamPresenceUpdated', (payload: StreamPresenceEvent) => {
-      setStream((prev) => (prev ? { ...prev, viewersCount: payload.viewersCount } : prev));
+      patchCurrentStream(payload.streamId, (prev) => ({ ...prev, viewersCount: payload.viewersCount }));
+      patchActiveStream(payload.streamId, (prev) => ({ ...prev, viewersCount: payload.viewersCount }));
       if (payload.joinedUsername) {
         setRecentViewerJoin(payload);
       }
     });
 
     socketRef.current.on('streamParticipantRemoved', (payload: StreamParticipantRemovedEvent) => {
-      setStream((prev) => (prev ? { ...prev, participants: payload.participants } : prev));
+      patchCurrentStream(payload.streamId, (prev) => ({ ...prev, participants: payload.participants }));
+      patchActiveStream(payload.streamId, (prev) => ({ ...prev, participants: payload.participants }));
       setRecentParticipantRemoved(payload);
     });
 
     socketRef.current.on('streamParticipantUpdated', (payload: StreamParticipantUpdatedEvent) => {
-      setStream((prev) =>
-        prev
-          ? {
-              ...prev,
-              participants: payload.participants,
-              joinRequests: payload.joinRequests ?? prev.joinRequests,
-              orientation: payload.orientation ?? prev.orientation,
-              mode: payload.mode ?? prev.mode,
-            }
-          : prev,
-      );
+      patchCurrentStream(payload.streamId, (prev) => ({
+        ...prev,
+        participants: payload.participants,
+        joinRequests: payload.joinRequests ?? prev.joinRequests,
+        orientation: payload.orientation ?? prev.orientation,
+        mode: payload.mode ?? prev.mode,
+      }));
+      patchActiveStream(payload.streamId, (prev) => ({
+        ...prev,
+        participants: payload.participants,
+        joinRequests: payload.joinRequests ?? prev.joinRequests,
+        orientation: payload.orientation ?? prev.orientation,
+        mode: payload.mode ?? prev.mode,
+      }));
       setRecentParticipantUpdated(payload);
     });
 
@@ -195,6 +232,10 @@ export function useStream() {
               }
             : prev,
         );
+        patchActiveStream(payload.streamId, (prev) => ({
+          ...prev,
+          joinRequests: payload.joinRequests,
+        }));
       },
     );
 
@@ -203,7 +244,12 @@ export function useStream() {
     });
 
     socketRef.current.on('streamStopped', (payload: StreamStoppedEvent) => {
-      setStream((prev) => (prev ? { ...prev, status: payload.status, endedAt: payload.endedAt } : prev));
+      patchCurrentStream(payload._id, (prev) => ({
+        ...prev,
+        status: payload.status,
+        endedAt: payload.endedAt,
+      }));
+      setActiveStreams((prev) => prev.filter((entry) => entry._id !== payload._id));
       setRecentStreamStopped(payload);
     });
 
@@ -266,15 +312,48 @@ export function useStream() {
   };
 
   const stopStream = async (streamId: string) => api.post(`/streams/${streamId}/stop`);
-  const inviteStreamer = async (streamId: string, streamerUserId: string) =>
-    api.post(`/streams/${streamId}/invite`, { streamerUserId });
-  const acceptInvite = async (streamId: string) => api.post(`/streams/${streamId}/accept-invite`);
-  const requestToJoinStream = async (streamId: string) => api.post(`/streams/${streamId}/request-join`);
-  const cancelJoinRequest = async (streamId: string) => api.delete(`/streams/${streamId}/request-join`);
-  const acceptJoinRequest = async (streamId: string, requestUserId: string) =>
-    api.post(`/streams/${streamId}/join-requests/${requestUserId}/accept`);
-  const declineJoinRequest = async (streamId: string, requestUserId: string) =>
-    api.post(`/streams/${streamId}/join-requests/${requestUserId}/decline`);
+  const inviteStreamer = async (streamId: string, streamerUserId: string) => {
+    const { data } = await api.post<{ stream: Stream }>(`/streams/${streamId}/invite`, { streamerUserId });
+    if (data.stream) {
+      syncStreamState(data.stream);
+    }
+    return data;
+  };
+  const acceptInvite = async (streamId: string) => {
+    const { data } = await api.post<{ stream: Stream }>(`/streams/${streamId}/accept-invite`);
+    if (data.stream) {
+      syncStreamState(data.stream);
+    }
+    return data;
+  };
+  const requestToJoinStream = async (streamId: string) => {
+    const { data } = await api.post<{ stream: Stream }>(`/streams/${streamId}/request-join`);
+    if (data.stream) {
+      syncStreamState(data.stream);
+    }
+    return data;
+  };
+  const cancelJoinRequest = async (streamId: string) => {
+    const { data } = await api.delete<{ stream: Stream }>(`/streams/${streamId}/request-join`);
+    if (data.stream) {
+      syncStreamState(data.stream);
+    }
+    return data;
+  };
+  const acceptJoinRequest = async (streamId: string, requestUserId: string) => {
+    const { data } = await api.post<{ stream: Stream }>(`/streams/${streamId}/join-requests/${requestUserId}/accept`);
+    if (data.stream) {
+      syncStreamState(data.stream);
+    }
+    return data;
+  };
+  const declineJoinRequest = async (streamId: string, requestUserId: string) => {
+    const { data } = await api.post<{ stream: Stream }>(`/streams/${streamId}/join-requests/${requestUserId}/decline`);
+    if (data.stream) {
+      syncStreamState(data.stream);
+    }
+    return data;
+  };
   const shareStream = async (streamId: string) => api.post(`/streams/${streamId}/share`);
   const shareStreamDirectly = async (streamId: string, targetUserIds: string[]) =>
     api.post(`/streams/${streamId}/share/direct`, { targetUserIds });
@@ -283,9 +362,20 @@ export function useStream() {
     api.post(`/streams/${streamId}/comments`, { message });
   const blockViewer = async (streamId: string, blockedUserId: string) =>
     api.post(`/streams/${streamId}/block`, { blockedUserId });
-  const removeParticipant = async (streamId: string, participantUserId: string) =>
-    api.post(`/streams/${streamId}/remove-participant`, { participantUserId });
-  const leaveStreamParticipation = async (streamId: string) => api.post(`/streams/${streamId}/leave`);
+  const removeParticipant = async (streamId: string, participantUserId: string) => {
+    const { data } = await api.post<{ stream: Stream }>(`/streams/${streamId}/remove-participant`, { participantUserId });
+    if (data.stream) {
+      syncStreamState(data.stream);
+    }
+    return data;
+  };
+  const leaveStreamParticipation = async (streamId: string) => {
+    const { data } = await api.post<{ stream: Stream }>(`/streams/${streamId}/leave`);
+    if (data.stream) {
+      syncStreamState(data.stream);
+    }
+    return data;
+  };
   const updateStreamLayout = async (
     streamId: string,
     orientation: Stream['orientation'],

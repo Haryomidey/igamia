@@ -60,13 +60,29 @@ export class StreamsService {
     return stream;
   }
 
-  private async ensureNoOtherActiveParticipation(targetStreamId: string, userId: string) {
-    const activeStream = await this.streamModel.findOne({
+  private async ensureNoOtherActiveParticipation(
+    targetStreamId: string,
+    userId: string,
+    options?: { allowHostedStreamOverlap?: boolean },
+  ) {
+    const activeStreams = await this.streamModel.find({
       status: 'live',
       'participants.userId': this.objectId(userId),
     });
 
-    if (activeStream && activeStream.id !== targetStreamId) {
+    const blockingStream = activeStreams.find((activeStream) => {
+      if (activeStream.id === targetStreamId) {
+        return false;
+      }
+
+      if (options?.allowHostedStreamOverlap && activeStream.hostUserId.toString() === userId) {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (blockingStream) {
       throw new ForbiddenException('End or leave your current live stream before viewing another stream');
     }
   }
@@ -74,6 +90,12 @@ export class StreamsService {
   private ensureHost(stream: StreamDocument, userId: string) {
     if (stream.hostUserId.toString() !== userId) {
       throw new ForbiddenException('Only the host can perform this action');
+    }
+  }
+
+  private ensureLive(stream: StreamDocument) {
+    if (stream.status !== 'live') {
+      throw new BadRequestException('This live stream has already ended');
     }
   }
 
@@ -86,14 +108,8 @@ export class StreamsService {
     }
   }
 
-  private ensureNotRemoved(stream: StreamDocument, userId: string) {
-    const isRemoved = stream.removedParticipantUserIds?.some(
-      (removedId: Types.ObjectId) => removedId.toString() === userId,
-    );
-
-    if (isRemoved) {
-      throw new ForbiddenException('You have been removed from this live stream');
-    }
+  private isBlockedFromStream(stream: StreamDocument, userId: string) {
+    return stream.blockedUserIds.some((blockedId: Types.ObjectId) => blockedId.toString() === userId);
   }
 
   async listActiveStreams() {
@@ -129,9 +145,15 @@ export class StreamsService {
 
   async createViewerToken(streamId: string, userId: string, username: string) {
     const stream = await this.requireStream(streamId);
+    this.ensureLive(stream);
     this.ensureNotBlocked(stream, userId);
-    this.ensureNotRemoved(stream, userId);
-    await this.ensureNoOtherActiveParticipation(streamId, userId);
+    const targetParticipant = stream.participants.find(
+      (participant: Stream['participants'][number]) => participant.userId.toString() === userId,
+    );
+    const allowHostedStreamOverlap = Boolean(
+      targetParticipant && targetParticipant.role !== 'invited' && stream.hostUserId.toString() !== userId,
+    );
+    await this.ensureNoOtherActiveParticipation(streamId, userId, { allowHostedStreamOverlap });
 
     const livekitHost = this.configService.get<string>('LIVEKIT_HOST');
     const apiKey = this.configService.get<string>('LIVEKIT_API_KEY');
@@ -188,7 +210,7 @@ export class StreamsService {
     const orientation =
       dto.orientation === 'horizontal' || dto.orientation === 'pip'
         ? dto.orientation
-        : 'vertical';
+        : 'horizontal';
 
     const stream = await this.streamModel.create({
       hostUserId: this.objectId(userId),
@@ -295,6 +317,7 @@ export class StreamsService {
           status: 'ended',
           endedAt: new Date(),
           participants: [],
+          joinRequests: [],
         },
       },
       { new: true },
@@ -405,12 +428,8 @@ export class StreamsService {
       throw new NotFoundException('Invited streamer not found');
     }
 
-    const wasRemoved = stream.removedParticipantUserIds?.some(
-      (removedId: Types.ObjectId) => removedId.toString() === dto.streamerUserId,
-    );
-
-    if (wasRemoved) {
-      throw new ForbiddenException('This participant was removed from the live');
+    if (this.isBlockedFromStream(stream, dto.streamerUserId)) {
+      throw new ForbiddenException('This user is blocked from this live');
     }
 
     const alreadyParticipant = stream.participants.some(
@@ -533,15 +552,9 @@ export class StreamsService {
       (participant: Stream['participants'][number]) =>
         participant.userId.toString() !== participantUserId,
     );
-
-    const alreadyRemoved = (stream.removedParticipantUserIds ?? []).some(
-      (removedId: Types.ObjectId) => removedId.toString() === participantUserId,
+    stream.joinRequests = stream.joinRequests.filter(
+      (request: Stream['joinRequests'][number]) => request.userId.toString() !== participantUserId,
     );
-
-    if (!alreadyRemoved) {
-      stream.removedParticipantUserIds = stream.removedParticipantUserIds ?? [];
-      stream.removedParticipantUserIds.push(this.objectId(participantUserId));
-    }
 
     await stream.save();
 
@@ -586,9 +599,9 @@ export class StreamsService {
 
   async requestToJoinStream(streamId: string, userId: string) {
     const stream = await this.requireStream(streamId);
+    this.ensureLive(stream);
     this.ensureNotBlocked(stream, userId);
-    this.ensureNotRemoved(stream, userId);
-    await this.ensureNoOtherActiveParticipation(streamId, userId);
+    await this.ensureNoOtherActiveParticipation(streamId, userId, { allowHostedStreamOverlap: true });
 
     if (stream.mode === 'pledge') {
       throw new BadRequestException('Pledge live sessions cannot receive viewer join requests');
@@ -652,6 +665,7 @@ export class StreamsService {
 
   async cancelJoinRequest(streamId: string, userId: string) {
     const stream = await this.requireStream(streamId);
+    this.ensureLive(stream);
 
     const request = stream.joinRequests.find(
       (entry: Stream['joinRequests'][number]) => entry.userId.toString() === userId,
@@ -675,6 +689,7 @@ export class StreamsService {
 
   async acceptJoinRequest(streamId: string, hostUserId: string, requestUserId: string) {
     const stream = await this.requireStream(streamId);
+    this.ensureLive(stream);
     this.ensureHost(stream, hostUserId);
 
     if (stream.mode === 'pledge') {
@@ -688,7 +703,30 @@ export class StreamsService {
       throw new NotFoundException('Join request not found');
     }
 
-    await this.ensureNoOtherActiveParticipation(streamId, requestUserId);
+    await this.ensureNoOtherActiveParticipation(streamId, requestUserId, {
+      allowHostedStreamOverlap: true,
+    });
+
+    const existingParticipant = stream.participants.find(
+      (entry: Stream['participants'][number]) => entry.userId.toString() === requestUserId,
+    );
+    if (existingParticipant) {
+      stream.joinRequests = stream.joinRequests.filter(
+        (entry: Stream['joinRequests'][number]) => entry.userId.toString() !== requestUserId,
+      );
+      await stream.save();
+
+      return {
+        message: 'Viewer is already part of this live',
+        participant: {
+          userId: requestUserId,
+          username: existingParticipant.username,
+          avatarUrl: existingParticipant.avatarUrl,
+          role: existingParticipant.role,
+        },
+        stream: stream.toObject(),
+      };
+    }
 
     stream.joinRequests = stream.joinRequests.filter(
       (entry: Stream['joinRequests'][number]) => entry.userId.toString() !== requestUserId,
@@ -716,6 +754,7 @@ export class StreamsService {
 
   async declineJoinRequest(streamId: string, hostUserId: string, requestUserId: string) {
     const stream = await this.requireStream(streamId);
+    this.ensureLive(stream);
     this.ensureHost(stream, hostUserId);
 
     const request = stream.joinRequests.find(

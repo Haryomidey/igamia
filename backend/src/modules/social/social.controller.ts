@@ -93,6 +93,46 @@ export class SocialController {
     return result.comment;
   }
 
+  @Post('posts/:postId/share/followers')
+  async sharePostToFollowers(
+    @CurrentUser() user: { sub: string },
+    @Param('postId') postId: string,
+  ) {
+    const result = await this.socialService.sharePostToFollowers(postId, user.sub);
+    this.socialGateway.emitPostUpdated(result.post);
+    result.targetUserIds.forEach((targetUserId, index) => {
+      this.socialGateway.emitDirectMessage(targetUserId, result.directMessages[index]);
+    });
+    return result;
+  }
+
+  @Post('posts/:postId/boost')
+  async boostPost(
+    @CurrentUser() user: { sub: string },
+    @Param('postId') postId: string,
+    @Body()
+    body: {
+      minAge?: number | null;
+      maxAge?: number | null;
+      location?: string;
+      preferences?: string[];
+    },
+  ) {
+    const post = await this.socialService.boostPost(postId, user.sub, body);
+    this.socialGateway.emitPostUpdated(post);
+    return post;
+  }
+
+  @Post('posts/:postId/report')
+  async reportPost(
+    @CurrentUser() user: { sub: string },
+    @Param('postId') postId: string,
+  ) {
+    const post = await this.socialService.reportPost(postId, user.sub);
+    this.socialGateway.emitPostUpdated(post);
+    return post;
+  }
+
   @Post('requests/:targetUserId')
   async sendRequest(
     @CurrentUser() user: { sub: string },

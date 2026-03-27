@@ -103,27 +103,7 @@ export function StreamStageGrid({
   onRemoveParticipant: (participantUserId: string, participantUsername: string) => void;
   onVideoElementChange?: (participantUserId: string, element: HTMLVideoElement | null) => void;
 }) {
-  const mappedParticipants = participants.filter((participant) => participant.role !== 'invited');
-  const stageParticipants = [
-    ...mappedParticipants,
-    ...videoTiles
-      .filter((tile) => {
-        const tileUserId = normalizeLiveValue(tile.participantUserId);
-        const tileName = normalizeLiveValue(tile.participantName);
-        return !mappedParticipants.some(
-          (participant) =>
-            normalizeLiveValue(participant.userId) === tileUserId ||
-            normalizeLiveValue(participant.username) === tileName,
-        );
-      })
-      .map((tile) => ({
-        userId: tile.participantUserId,
-        role: tile.isLocal ? 'host' : 'guest',
-        username: tile.participantName || 'Guest',
-        avatarUrl: '',
-        joinedAt: new Date().toISOString(),
-      })),
-  ].slice(0, 4);
+  const stageParticipants = participants.filter((participant) => participant.role !== 'invited').slice(0, 4);
   const total = Math.max(stageParticipants.length, 1);
 
   return (
@@ -151,7 +131,9 @@ export function StreamStageGrid({
             className={`absolute overflow-hidden border border-white/5 bg-black transition-all duration-500 ${
               isPipOverlay
                 ? 'right-4 z-30 h-36 w-24 rounded-2xl shadow-2xl'
-                : 'inset-0'
+                : total <= 1
+                  ? 'inset-0'
+                  : ''
             } ${
               !isPipOverlay ? tileLayoutClass(total, index, orientation) : ''
             } ${
@@ -175,8 +157,6 @@ export function StreamStageGrid({
                       : 'bottom-0 right-0'
                 : ''
             } ${
-              isPipOverlay ? '' : total <= 1 ? 'h-full w-full' : ''
-            } ${
               isSelected ? 'ring-2 ring-white/30' : 'opacity-95'
             }`}
             style={
@@ -194,7 +174,7 @@ export function StreamStageGrid({
                 />
                 <div className="absolute inset-0 bg-linear-to-t from-black via-black/60 to-black/35" />
                 <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
-                  <VideoOff size={20} className="text-white/80 sm:size-6" />
+                  <VideoOff size={20} className="text-white/85 sm:size-6" />
                   <p className="mt-2 text-[10px] font-black uppercase italic text-white sm:mt-3 sm:text-sm">
                     {participant.username}
                   </p>

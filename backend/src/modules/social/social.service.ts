@@ -23,6 +23,18 @@ export type FeedPost = {
   likedByMe: boolean;
   likesCount: number;
   commentsCount: number;
+  sharesCount: number;
+  reportsCount: number;
+  boost?: {
+    active: boolean;
+    targeting: {
+      minAge?: number | null;
+      maxAge?: number | null;
+      location?: string;
+      preferences: string[];
+    };
+    boostedAt?: Date;
+  };
   createdAt?: Date;
   updatedAt?: Date;
 };
@@ -73,7 +85,8 @@ export class SocialService {
   private serializePost(
     post: Pick<
       SocialPost,
-      'userId' | 'username' | 'userFullName' | 'avatarUrl' | 'content' | 'mediaUrl' | 'mediaType' | 'likedByUserIds' | 'commentsCount'
+      'userId' | 'username' | 'userFullName' | 'avatarUrl' | 'content' | 'mediaUrl' | 'mediaType' | 'likedByUserIds' | 'commentsCount' | 'sharesCount' | 'boost'
+      | 'reportsCount'
     > & { _id: unknown; createdAt?: Date; updatedAt?: Date },
     userId: string,
   ): FeedPost {
@@ -82,7 +95,72 @@ export class SocialService {
       likedByMe: post.likedByUserIds.some((likedUserId) => likedUserId.toString() === userId),
       likesCount: post.likedByUserIds.length,
       commentsCount: post.commentsCount ?? 0,
+      sharesCount: post.sharesCount ?? 0,
+      reportsCount: post.reportsCount ?? 0,
+      boost: post.boost
+        ? {
+            active: Boolean(post.boost.active),
+            targeting: {
+              minAge: post.boost.targeting?.minAge ?? null,
+              maxAge: post.boost.targeting?.maxAge ?? null,
+              location: post.boost.targeting?.location ?? '',
+              preferences: post.boost.targeting?.preferences ?? [],
+            },
+            boostedAt: post.boost.boostedAt,
+          }
+        : undefined,
     };
+  }
+
+  private getBoostScore(
+    post: Pick<SocialPost, 'boost' | 'userId'> & { createdAt?: Date },
+    viewer?: { age?: number | null; location?: string; gameInterests?: string[] } | null,
+  ) {
+    if (!post.boost?.active) {
+      return 0;
+    }
+
+    const targeting = post.boost.targeting ?? { preferences: [] };
+    let score = 8;
+    const viewerAge = viewer?.age ?? null;
+    const viewerLocation = viewer?.location?.trim().toLowerCase() ?? '';
+    const viewerPreferences = new Set((viewer?.gameInterests ?? []).map((entry) => entry.trim().toLowerCase()));
+
+    if (typeof targeting.minAge === 'number' || typeof targeting.maxAge === 'number') {
+      if (viewerAge == null) {
+        score -= 2;
+      } else {
+        if (typeof targeting.minAge === 'number' && viewerAge >= targeting.minAge) {
+          score += 2;
+        }
+        if (typeof targeting.maxAge === 'number' && viewerAge <= targeting.maxAge) {
+          score += 2;
+        }
+        if (
+          (typeof targeting.minAge === 'number' && viewerAge < targeting.minAge) ||
+          (typeof targeting.maxAge === 'number' && viewerAge > targeting.maxAge)
+        ) {
+          score -= 3;
+        }
+      }
+    }
+
+    if (targeting.location?.trim()) {
+      score += viewerLocation && viewerLocation.includes(targeting.location.trim().toLowerCase()) ? 3 : -1;
+    }
+
+    if (targeting.preferences?.length) {
+      const matchedPreferences = targeting.preferences.filter((entry) =>
+        viewerPreferences.has(entry.trim().toLowerCase()),
+      ).length;
+      score += matchedPreferences * 2;
+      if (!matchedPreferences) {
+        score -= 1;
+      }
+    }
+
+    const boostedAt = post.boost.boostedAt ? new Date(post.boost.boostedAt).getTime() : 0;
+    return score + boostedAt / 1_000_000_000_000;
   }
 
   private serializeComment(
@@ -264,8 +342,30 @@ export class SocialService {
   }
 
   async listFeed(userId: string): Promise<FeedPost[]> {
-    const posts = await this.socialPostModel.find().sort({ createdAt: -1 }).limit(40).lean();
-    return posts.map((post) => this.serializePost(post, userId));
+    const [posts, viewer] = await Promise.all([
+      this.socialPostModel.find().sort({ createdAt: -1 }).limit(80).lean(),
+      this.usersService.findById(userId),
+    ]);
+
+    return posts
+      .sort((left, right) => {
+        const boostDelta = this.getBoostScore(right, viewer) - this.getBoostScore(left, viewer);
+        if (boostDelta !== 0) {
+          return boostDelta;
+        }
+
+        const rightCreatedAt =
+          'createdAt' in right && right.createdAt
+            ? new Date(right.createdAt as string | number | Date).getTime()
+            : 0;
+        const leftCreatedAt =
+          'createdAt' in left && left.createdAt
+            ? new Date(left.createdAt as string | number | Date).getTime()
+            : 0;
+        return rightCreatedAt - leftCreatedAt;
+      })
+      .slice(0, 40)
+      .map((post) => this.serializePost(post, userId));
   }
 
   async getSocialUserProfile(userId: string, targetUserId: string): Promise<SocialUserProfile> {
@@ -343,7 +443,19 @@ export class SocialService {
       mediaUrl: payload.mediaUrl?.trim() || '',
       mediaType: payload.mediaType ?? (payload.mediaUrl ? 'image' : 'text'),
       likedByUserIds: [],
+      reportedByUserIds: [],
       commentsCount: 0,
+      sharesCount: 0,
+      reportsCount: 0,
+      boost: {
+        active: false,
+        targeting: {
+          minAge: null,
+          maxAge: null,
+          location: '',
+          preferences: [],
+        },
+      },
     });
 
     return this.serializePost(created.toObject(), userId);
@@ -457,6 +569,133 @@ export class SocialService {
       comment: this.serializeComment(comment.toObject()),
       commentsCount: post.commentsCount,
     };
+  }
+
+  async sharePostToFollowers(postId: string, userId: string) {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const [post, sender, followerIds] = await Promise.all([
+      this.socialPostModel.findById(postId),
+      this.usersService.findById(userId),
+      this.getFollowerIds(userId),
+    ]);
+
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    if (!sender) {
+      throw new NotFoundException('User not found');
+    }
+
+    const normalizedFollowerIds = [...new Set(followerIds.filter((entry) => entry !== userId))];
+    if (!normalizedFollowerIds.length) {
+      throw new BadRequestException('No followers available to share this post with');
+    }
+
+    const postUrl = `/post/${post.id}`;
+    const directMessages = await Promise.all(
+      normalizedFollowerIds.map((targetUserId) =>
+        this.sendDirectMessage(
+          userId,
+          targetUserId,
+          `@${sender.username} shared a community post with you: ${postUrl}`,
+        ),
+      ),
+    );
+
+    post.sharesCount = (post.sharesCount ?? 0) + normalizedFollowerIds.length;
+    await post.save();
+
+    return {
+      post: this.serializePost(post.toObject(), userId),
+      targetUserIds: normalizedFollowerIds,
+      directMessages,
+      sharedCount: normalizedFollowerIds.length,
+    };
+  }
+
+  async boostPost(
+    postId: string,
+    userId: string,
+    payload: {
+      minAge?: number | null;
+      maxAge?: number | null;
+      location?: string;
+      preferences?: string[];
+    },
+  ) {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.socialPostModel.findById(postId);
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    if (post.userId.toString() !== userId) {
+      throw new BadRequestException('You can only boost your own posts');
+    }
+
+    const minAge =
+      typeof payload.minAge === 'number' && Number.isFinite(payload.minAge)
+        ? Math.max(13, Math.floor(payload.minAge))
+        : null;
+    const maxAge =
+      typeof payload.maxAge === 'number' && Number.isFinite(payload.maxAge)
+        ? Math.max(13, Math.floor(payload.maxAge))
+        : null;
+
+    if (minAge !== null && maxAge !== null && minAge > maxAge) {
+      throw new BadRequestException('Minimum age cannot be greater than maximum age');
+    }
+
+    post.boost = {
+      active: true,
+      boostedAt: new Date(),
+      targeting: {
+        minAge,
+        maxAge,
+        location: payload.location?.trim() ?? '',
+        preferences: [...new Set((payload.preferences ?? []).map((entry) => entry.trim()).filter(Boolean))],
+      },
+    } as SocialPost['boost'];
+    await post.save();
+
+    return this.serializePost(post.toObject(), userId);
+  }
+
+  async reportPost(postId: string, userId: string) {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const userObjectId = this.objectId(userId);
+    const post = await this.socialPostModel.findById(postId);
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    if (post.userId.toString() === userId) {
+      throw new BadRequestException('You cannot report your own post');
+    }
+
+    const alreadyReported = post.reportedByUserIds.some(
+      (reportedUserId) => reportedUserId.toString() === userId,
+    );
+
+    if (alreadyReported) {
+      return this.serializePost(post.toObject(), userId);
+    }
+
+    post.reportedByUserIds.push(userObjectId);
+    post.reportsCount = (post.reportsCount ?? 0) + 1;
+    await post.save();
+
+    return this.serializePost(post.toObject(), userId);
   }
 
   async getFollowerIds(userId: string) {

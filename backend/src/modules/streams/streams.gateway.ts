@@ -364,6 +364,12 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
         avatarUrl?: string;
         joinedAt: Date | string;
       }>;
+      joinRequests?: Array<{
+        userId: string;
+        username: string;
+        avatarUrl?: string;
+        requestedAt: Date | string;
+      }>;
       orientation?: 'vertical' | 'horizontal' | 'pip';
       mode?: 'normal' | 'pledge';
     },

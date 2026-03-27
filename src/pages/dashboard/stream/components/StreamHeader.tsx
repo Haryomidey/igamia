@@ -25,6 +25,7 @@ export function StreamHeader({
   canOpenControls,
   pendingJoinRequestsCount,
   canOpenRequests,
+  canFollowHost,
   activeParticipant,
   recordingDurationLabel,
   isSavingRecording,
@@ -45,6 +46,7 @@ export function StreamHeader({
   canOpenControls: boolean;
   pendingJoinRequestsCount?: number;
   canOpenRequests?: boolean;
+  canFollowHost?: boolean;
   activeParticipant?: Stream['participants'][number];
   recordingDurationLabel?: string | null;
   isSavingRecording?: boolean;
@@ -129,7 +131,7 @@ export function StreamHeader({
         </div>
 
         <div className="pointer-events-auto flex items-center gap-2">
-          {!isHostView && !isCoStreamerView && !isInvitedPending && (
+          {!isHostView && !isCoStreamerView && !isInvitedPending && canFollowHost && (
             <button
               onClick={(event) => {
                 event.stopPropagation();

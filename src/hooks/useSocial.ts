@@ -38,6 +38,18 @@ export type SocialPost = {
   likedByMe: boolean;
   likesCount: number;
   commentsCount: number;
+  sharesCount: number;
+  reportsCount: number;
+  boost?: {
+    active: boolean;
+    targeting: {
+      minAge?: number | null;
+      maxAge?: number | null;
+      location?: string;
+      preferences: string[];
+    };
+    boostedAt?: string;
+  };
   createdAt?: string;
 };
 
@@ -99,6 +111,17 @@ export function useSocial(autoLoad = true) {
 
     socketRef.current.on('social:postCreated', (payload: SocialPost) => {
       setFeed((current) => [payload, ...current.filter((post) => post._id !== payload._id)]);
+    });
+
+    socketRef.current.on('social:postUpdated', (payload: SocialPost) => {
+      setFeed((current) => {
+        const exists = current.some((post) => post._id === payload._id);
+        if (!exists) {
+          return current;
+        }
+
+        return current.map((post) => (post._id === payload._id ? payload : post));
+      });
     });
 
     socketRef.current.on('social:postLiked', (payload: SocialPostLikeEvent) => {
@@ -305,6 +328,34 @@ export function useSocial(autoLoad = true) {
     return data;
   };
 
+  const sharePostToFollowers = async (postId: string) => {
+    const { data } = await api.post<{ post: SocialPost; sharedCount: number }>(`/social/posts/${postId}/share/followers`);
+    if (data.post) {
+      setFeed((current) => current.map((post) => (post._id === data.post._id ? data.post : post)));
+    }
+    return data;
+  };
+
+  const boostPost = async (
+    postId: string,
+    payload: {
+      minAge?: number | null;
+      maxAge?: number | null;
+      location?: string;
+      preferences?: string[];
+    },
+  ) => {
+    const { data } = await api.post<SocialPost>(`/social/posts/${postId}/boost`, payload);
+    setFeed((current) => current.map((post) => (post._id === data._id ? data : post)));
+    return data;
+  };
+
+  const reportPost = async (postId: string) => {
+    const { data } = await api.post<SocialPost>(`/social/posts/${postId}/report`);
+    setFeed((current) => current.map((post) => (post._id === data._id ? data : post)));
+    return data;
+  };
+
   useEffect(() => {
     const token = getAccessToken();
     if (!token) {
@@ -351,5 +402,8 @@ export function useSocial(autoLoad = true) {
     fetchPost,
     fetchPostComments,
     commentOnPost,
+    sharePostToFollowers,
+    boostPost,
+    reportPost,
   };
 }

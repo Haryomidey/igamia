@@ -394,6 +394,7 @@ export function usePledgeNotifications() {
 export function PledgeNotificationsBell() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const toast = useToast();
   const {
     notifications,
     unreadCount,
@@ -401,6 +402,22 @@ export function PledgeNotificationsBell() {
     markAsRead,
     markAllAsRead,
   } = usePledgeNotifications();
+
+  const openLiveIfAvailable = async (streamId: string) => {
+    try {
+      const { data } = await api.get<{ stream: { status: 'live' | 'ended' } }>(`/streams/${streamId}`);
+      if (data.stream.status === 'ended') {
+        toast.info('This live stream has already ended.', { title: 'Live Ended' });
+        return false;
+      }
+
+      navigate(`/stream?streamId=${streamId}`);
+      return true;
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to open this live stream.');
+      return false;
+    }
+  };
 
   return (
     <div className="relative">
@@ -434,11 +451,11 @@ export function PledgeNotificationsBell() {
           </div>
 
           {notifications.length ? (
-            <div className="space-y-3">
+            <div className="max-h-96 space-y-3 overflow-y-auto pr-1">
               {notifications.map((notification) => (
                 <button
                   key={notification.id}
-                  onClick={() => {
+                  onClick={async () => {
                     markAsRead(notification.id);
                     if (
                       notification.type === 'followed_host_live' ||
@@ -446,7 +463,15 @@ export function PledgeNotificationsBell() {
                       notification.type === 'stream_shared' ||
                       notification.type === 'stream_join_request'
                     ) {
-                      navigate(`/stream?streamId=${notification.streamId}`);
+                      if (notification.type === 'stream_join_request') {
+                        const opened = await openLiveIfAvailable(notification.streamId);
+                        if (!opened) {
+                          setOpen(false);
+                          return;
+                        }
+                      } else {
+                        await openLiveIfAvailable(notification.streamId);
+                      }
                     } else {
                       setActiveNotification({ ...notification, read: true });
                     }
