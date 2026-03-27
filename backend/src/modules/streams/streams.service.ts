@@ -207,6 +207,7 @@ export class StreamsService {
           joinedAt: new Date(),
         },
       ],
+      joinRequests: [],
       shareUrl: '',
       roomName,
       livekitRoomName: roomName,
@@ -257,6 +258,7 @@ export class StreamsService {
         avatarUrl: '',
         joinedAt: new Date(),
       })),
+      joinRequests: [],
       shareUrl: '',
       livekitRoomName: roomName,
     });
@@ -427,9 +429,17 @@ export class StreamsService {
       await stream.save();
     }
 
+    const directMessage = await this.socialService.sendDirectMessage(
+      userId,
+      dto.streamerUserId,
+      `@${stream.participants.find((participant: Stream['participants'][number]) => participant.role === 'host')?.username ?? 'host'} invited you to join the live "${stream.title}": ${stream.shareUrl}`,
+      { bypassConnectionCheck: true },
+    );
+
     return {
       message: 'Streamer invited successfully',
       stream: stream.toObject(),
+      directMessage,
       invitedUser: {
         id: invitedUser.id,
         username: invitedUser.username,
@@ -571,6 +581,197 @@ export class StreamsService {
       message: 'Stream shared successfully',
       sharesCount: stream.sharesCount,
       shareUrl: stream.shareUrl,
+    };
+  }
+
+  async requestToJoinStream(streamId: string, userId: string) {
+    const stream = await this.requireStream(streamId);
+    this.ensureNotBlocked(stream, userId);
+    this.ensureNotRemoved(stream, userId);
+    await this.ensureNoOtherActiveParticipation(streamId, userId);
+
+    if (stream.mode === 'pledge') {
+      throw new BadRequestException('Pledge live sessions cannot receive viewer join requests');
+    }
+
+    if (stream.hostUserId.toString() === userId) {
+      throw new BadRequestException('Host cannot request to join their own live');
+    }
+
+    const existingParticipant = stream.participants.find(
+      (participant: Stream['participants'][number]) => participant.userId.toString() === userId,
+    );
+    if (existingParticipant) {
+      throw new BadRequestException('You are already part of this live');
+    }
+
+    const existingRequest = stream.joinRequests.find(
+      (request: Stream['joinRequests'][number]) => request.userId.toString() === userId,
+    );
+    if (existingRequest) {
+      return {
+        message: 'Join request already sent',
+        stream: stream.toObject(),
+        request: {
+          userId,
+          username: existingRequest.username,
+          avatarUrl: existingRequest.avatarUrl,
+          requestedAt: existingRequest.requestedAt,
+        },
+      };
+    }
+
+    const requestingUser = await this.usersService.findById(userId);
+    if (!requestingUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    stream.joinRequests.push({
+      userId: this.objectId(userId),
+      username: requestingUser.username,
+      avatarUrl: requestingUser.avatarUrl,
+      requestedAt: new Date(),
+    } as Stream['joinRequests'][number]);
+    await stream.save();
+
+    const createdRequest = stream.joinRequests.find(
+      (request: Stream['joinRequests'][number]) => request.userId.toString() === userId,
+    );
+
+    return {
+      message: 'Join request sent',
+      stream: stream.toObject(),
+      request: {
+        userId,
+        username: createdRequest?.username ?? requestingUser.username,
+        avatarUrl: createdRequest?.avatarUrl ?? requestingUser.avatarUrl,
+        requestedAt: createdRequest?.requestedAt ?? new Date(),
+      },
+    };
+  }
+
+  async cancelJoinRequest(streamId: string, userId: string) {
+    const stream = await this.requireStream(streamId);
+
+    const request = stream.joinRequests.find(
+      (entry: Stream['joinRequests'][number]) => entry.userId.toString() === userId,
+    );
+    if (!request) {
+      throw new NotFoundException('Join request not found');
+    }
+
+    stream.joinRequests = stream.joinRequests.filter(
+      (entry: Stream['joinRequests'][number]) => entry.userId.toString() !== userId,
+    );
+    await stream.save();
+
+    return {
+      message: 'Join request removed',
+      removedUserId: userId,
+      removedUsername: request.username,
+      stream: stream.toObject(),
+    };
+  }
+
+  async acceptJoinRequest(streamId: string, hostUserId: string, requestUserId: string) {
+    const stream = await this.requireStream(streamId);
+    this.ensureHost(stream, hostUserId);
+
+    if (stream.mode === 'pledge') {
+      throw new BadRequestException('Pledge live sessions cannot accept viewer join requests');
+    }
+
+    const request = stream.joinRequests.find(
+      (entry: Stream['joinRequests'][number]) => entry.userId.toString() === requestUserId,
+    );
+    if (!request) {
+      throw new NotFoundException('Join request not found');
+    }
+
+    await this.ensureNoOtherActiveParticipation(streamId, requestUserId);
+
+    stream.joinRequests = stream.joinRequests.filter(
+      (entry: Stream['joinRequests'][number]) => entry.userId.toString() !== requestUserId,
+    );
+    stream.participants.push({
+      userId: this.objectId(requestUserId),
+      role: 'guest',
+      username: request.username,
+      avatarUrl: request.avatarUrl,
+      joinedAt: new Date(),
+    });
+    await stream.save();
+
+    return {
+      message: 'Join request accepted',
+      participant: {
+        userId: requestUserId,
+        username: request.username,
+        avatarUrl: request.avatarUrl,
+        role: 'guest' as const,
+      },
+      stream: stream.toObject(),
+    };
+  }
+
+  async declineJoinRequest(streamId: string, hostUserId: string, requestUserId: string) {
+    const stream = await this.requireStream(streamId);
+    this.ensureHost(stream, hostUserId);
+
+    const request = stream.joinRequests.find(
+      (entry: Stream['joinRequests'][number]) => entry.userId.toString() === requestUserId,
+    );
+    if (!request) {
+      throw new NotFoundException('Join request not found');
+    }
+
+    stream.joinRequests = stream.joinRequests.filter(
+      (entry: Stream['joinRequests'][number]) => entry.userId.toString() !== requestUserId,
+    );
+    await stream.save();
+
+    return {
+      message: 'Join request declined',
+      requestUserId,
+      requestUsername: request.username,
+      stream: stream.toObject(),
+    };
+  }
+
+  async shareStreamDirectly(streamId: string, userId: string, targetUserIds: string[]) {
+    const stream = await this.requireStream(streamId);
+    const sender = await this.usersService.findById(userId);
+    if (!sender) {
+      throw new NotFoundException('User not found');
+    }
+
+    const normalizedTargetIds = [...new Set(targetUserIds.filter((targetId) => targetId && targetId !== userId))];
+    if (!normalizedTargetIds.length) {
+      throw new BadRequestException('Select at least one user to share this live with');
+    }
+
+    stream.sharesCount += normalizedTargetIds.length;
+    await stream.save();
+
+    const directMessages = await Promise.all(
+      normalizedTargetIds.map((targetUserId) =>
+        this.socialService.sendDirectMessage(
+          userId,
+          targetUserId,
+          `@${sender.username} shared a live with you: ${stream.shareUrl}`,
+          { bypassConnectionCheck: true },
+        ),
+      ),
+    );
+
+    return {
+      message: 'Stream shared successfully',
+      shareUrl: stream.shareUrl,
+      sharesCount: stream.sharesCount,
+      senderUsername: sender.username,
+      directMessages,
+      targetUserIds: normalizedTargetIds,
+      stream: stream.toObject(),
     };
   }
 

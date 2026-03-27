@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { Bell, Radio, UserPlus, X } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import { api, getAccessToken, pledgeSocketUrl, streamSocketUrl } from '../api/axios';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from './ToastProvider';
 import { useAuth } from '../hooks/useAuth';
 
@@ -42,6 +42,28 @@ type StreamInviteNotification = {
   read: boolean;
 };
 
+type StreamJoinRequestNotification = {
+  id: string;
+  type: 'stream_join_request';
+  streamId: string;
+  title: string;
+  requestedByUserId: string;
+  requestedByUsername: string;
+  createdAt: string;
+  read: boolean;
+};
+
+type StreamShareNotification = {
+  id: string;
+  type: 'stream_shared';
+  streamId: string;
+  title: string;
+  sharedByUserId: string;
+  sharedByUsername: string;
+  createdAt: string;
+  read: boolean;
+};
+
 type PledgeResultClaimNotification = {
   id: string;
   type: 'pledge_result_claim';
@@ -72,6 +94,8 @@ type DashboardNotification =
   | PledgeRequestNotification
   | FollowedHostLiveNotification
   | StreamInviteNotification
+  | StreamJoinRequestNotification
+  | StreamShareNotification
   | PledgeResultClaimNotification
   | PledgeDisputeNotification;
 
@@ -259,8 +283,63 @@ export function PledgeNotificationsProvider({ children }: { children: React.Reac
       };
 
       setNotifications((prev) => [nextNotification, ...prev].slice(0, 20));
-      setActiveNotification(nextNotification);
       toast.info(`${payload.hostUsername} invited you to join a live stream.`, { title: 'Live Invite' });
+    });
+
+    streamSocket.on('streamJoinRequestReceived', (payload: {
+      streamId: string;
+      title: string;
+      requestedByUserId: string;
+      requestedByUsername: string;
+    }) => {
+      const nextNotification: StreamJoinRequestNotification = {
+        ...payload,
+        id: `join-request:${payload.streamId}:${payload.requestedByUserId}:${Date.now()}`,
+        type: 'stream_join_request',
+        createdAt: new Date().toISOString(),
+        read: false,
+      };
+
+      setNotifications((prev) => [nextNotification, ...prev].slice(0, 20));
+      toast.info(`${payload.requestedByUsername} asked to join your live.`, { title: 'Join Request' });
+    });
+
+    streamSocket.on('streamJoinRequestResolved', (payload: {
+      streamId: string;
+      title: string;
+      hostUserId: string;
+      hostUsername: string;
+      decision: 'accepted' | 'declined';
+    }) => {
+      if (payload.decision === 'accepted') {
+        toast.success(`${payload.hostUsername} accepted your request.`, {
+          title: 'Join Request Accepted',
+        });
+        navigate(`/stream?streamId=${payload.streamId}`);
+        return;
+      }
+
+      toast.info(`${payload.hostUsername} declined your request for ${payload.title}.`, {
+        title: 'Join Request Declined',
+      });
+    });
+
+    streamSocket.on('streamSharedReceived', (payload: {
+      streamId: string;
+      title: string;
+      sharedByUserId: string;
+      sharedByUsername: string;
+    }) => {
+      const nextNotification: StreamShareNotification = {
+        ...payload,
+        id: `shared:${payload.streamId}:${payload.sharedByUserId}:${Date.now()}`,
+        type: 'stream_shared',
+        createdAt: new Date().toISOString(),
+        read: false,
+      };
+
+      setNotifications((prev) => [nextNotification, ...prev].slice(0, 20));
+      toast.info(`${payload.sharedByUsername} shared a live with you.`, { title: 'Live Shared' });
     });
 
     pledgeSocketRef.current = pledgeSocket;
@@ -314,6 +393,7 @@ export function usePledgeNotifications() {
 
 export function PledgeNotificationsBell() {
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
   const {
     notifications,
     unreadCount,
@@ -360,7 +440,16 @@ export function PledgeNotificationsBell() {
                   key={notification.id}
                   onClick={() => {
                     markAsRead(notification.id);
-                    setActiveNotification({ ...notification, read: true });
+                    if (
+                      notification.type === 'followed_host_live' ||
+                      notification.type === 'stream_invite' ||
+                      notification.type === 'stream_shared' ||
+                      notification.type === 'stream_join_request'
+                    ) {
+                      navigate(`/stream?streamId=${notification.streamId}`);
+                    } else {
+                      setActiveNotification({ ...notification, read: true });
+                    }
                     setOpen(false);
                   }}
                   className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${
@@ -372,22 +461,28 @@ export function PledgeNotificationsBell() {
                   <p className="text-sm font-bold text-white">
                     {notification.type === 'pledge_request'
                       ? `${notification.joinedByUsername} wants to join your pledge`
+                      : notification.type === 'stream_join_request'
+                        ? `${notification.requestedByUsername} wants to join your live`
                       : notification.type === 'pledge_result_claim'
                         ? `${notification.claimedByUsername} submitted a result`
                         : notification.type === 'pledge_dispute'
                           ? `${notification.senderUsername} updated a dispute`
-                      : notification.type === 'stream_invite'
-                        ? `${notification.hostUsername} invited you to a live`
-                        : `${notification.hostUsername} went live`}
+                        : notification.type === 'stream_invite'
+                          ? `${notification.hostUsername} invited you to a live`
+                          : notification.type === 'stream_shared'
+                            ? `${notification.sharedByUsername} shared a live`
+                            : `${notification.hostUsername} went live`}
                   </p>
                   <p className="mt-1 text-xs text-zinc-400">
                     {notification.type === 'pledge_request'
                       ? `${notification.gameTitle} • $${notification.amountUsd.toFixed(2)} stake`
+                      : notification.type === 'stream_join_request'
+                        ? notification.title
                       : notification.type === 'pledge_result_claim'
                         ? `${notification.outcome.toUpperCase()} claim for ${notification.title}`
                         : notification.type === 'pledge_dispute'
                           ? notification.message
-                      : notification.title}
+                          : notification.title}
                   </p>
                   <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
                     {formatNotificationTime(
@@ -403,7 +498,7 @@ export function PledgeNotificationsBell() {
             </div>
           ) : (
             <div className="rounded-2xl border border-white/5 bg-white/5 px-4 py-8 text-center text-sm text-zinc-500">
-              No pledge notifications yet.
+              No notifications yet.
             </div>
           )}
         </div>
@@ -419,6 +514,15 @@ function PledgeJoinNotificationModal() {
   const navigate = useNavigate();
 
   if (!activeNotification) {
+    return null;
+  }
+
+  if (
+    activeNotification.type === 'stream_invite' ||
+    activeNotification.type === 'stream_join_request' ||
+    activeNotification.type === 'stream_shared' ||
+    activeNotification.type === 'followed_host_live'
+  ) {
     return null;
   }
 
@@ -584,6 +688,20 @@ function PledgeJoinNotificationModal() {
       try {
         setSubmitting(true);
 
+        if (activeNotification.type === 'stream_join_request') {
+          if (action === 'accept') {
+            await api.post(
+              `/streams/${activeNotification.streamId}/join-requests/${activeNotification.requestedByUserId}/accept`,
+            );
+          }
+
+          if (action === 'decline') {
+            await api.post(
+              `/streams/${activeNotification.streamId}/join-requests/${activeNotification.requestedByUserId}/decline`,
+            );
+          }
+        }
+
         if (activeNotification.type === 'stream_invite') {
           if (action === 'accept') {
             await api.post(`/streams/${activeNotification.streamId}/accept-invite`);
@@ -620,12 +738,22 @@ function PledgeJoinNotificationModal() {
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">
-                  {activeNotification.type === 'stream_invite' ? 'Live Invitation' : 'Following Live'}
+                  {activeNotification.type === 'stream_invite'
+                    ? 'Live Invitation'
+                    : activeNotification.type === 'stream_join_request'
+                      ? 'Join Request'
+                      : activeNotification.type === 'stream_shared'
+                        ? 'Live Shared'
+                        : 'Following Live'}
                 </p>
                 <h3 className="mt-2 text-xl font-black uppercase italic text-white">
                   {activeNotification.type === 'stream_invite'
                     ? `${activeNotification.hostUsername} Invited You`
-                    : `${activeNotification.hostUsername} Is Live`}
+                    : activeNotification.type === 'stream_join_request'
+                      ? `${activeNotification.requestedByUsername} Wants In`
+                      : activeNotification.type === 'stream_shared'
+                        ? `${activeNotification.sharedByUsername} Shared A Live`
+                        : `${activeNotification.hostUsername} Is Live`}
                 </h3>
               </div>
             </div>
@@ -643,13 +771,27 @@ function PledgeJoinNotificationModal() {
             <p className="text-sm text-zinc-300">
               {activeNotification.type === 'stream_invite'
                 ? `${activeNotification.hostUsername} wants you to join "${activeNotification.title}".`
+                : activeNotification.type === 'stream_join_request'
+                  ? `${activeNotification.requestedByUsername} wants to join "${activeNotification.title}" on stream.`
+                  : activeNotification.type === 'stream_shared'
+                    ? `${activeNotification.sharedByUsername} shared "${activeNotification.title}" with you.`
                 : activeNotification.title}
             </p>
+            {(activeNotification.type === 'stream_invite' ||
+              activeNotification.type === 'stream_shared' ||
+              activeNotification.type === 'followed_host_live') && (
+              <Link
+                to={`/stream?streamId=${activeNotification.streamId}`}
+                className="inline-flex text-xs font-black uppercase tracking-[0.18em] text-brand-accent underline underline-offset-4"
+              >
+                Open live link
+              </Link>
+            )}
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
               {formatNotificationTime(activeNotification.createdAt)}
             </p>
           </div>
-          {activeNotification.type === 'stream_invite' ? (
+          {activeNotification.type === 'stream_invite' || activeNotification.type === 'stream_join_request' ? (
             <div className="mt-6 grid grid-cols-2 gap-4">
               <button
                 onClick={() => void handleStreamNotification('decline')}
@@ -663,7 +805,11 @@ function PledgeJoinNotificationModal() {
                 disabled={submitting}
                 className="rounded-2xl bg-brand-primary px-6 py-4 text-xs font-black uppercase tracking-[0.2em] text-white transition-colors hover:bg-brand-accent hover:text-black disabled:opacity-50"
               >
-                {submitting ? 'Updating...' : 'Accept Invite'}
+                {submitting
+                  ? 'Updating...'
+                  : activeNotification.type === 'stream_join_request'
+                    ? 'Accept Request'
+                    : 'Accept Invite'}
               </button>
             </div>
           ) : (

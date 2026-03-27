@@ -479,12 +479,17 @@ export class SocialService {
       .lean();
   }
 
-  async sendDirectMessage(userId: string, targetUserId: string, message: string) {
+  async sendDirectMessage(
+    userId: string,
+    targetUserId: string,
+    message: string,
+    options?: { bypassConnectionCheck?: boolean },
+  ) {
     if (userId === targetUserId) {
       throw new BadRequestException('You cannot message yourself');
     }
 
-    if (!(await this.areConnected(userId, targetUserId))) {
+    if (!options?.bypassConnectionCheck && !(await this.areConnected(userId, targetUserId))) {
       throw new BadRequestException('Only connected users can send direct messages');
     }
 

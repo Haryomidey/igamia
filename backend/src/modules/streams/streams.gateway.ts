@@ -307,6 +307,38 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
     this.server.to(this.userRoom(invitedUserId)).emit('streamInviteReceived', payload);
   }
 
+  emitStreamJoinRequestNotification(
+    hostUserId: string,
+    payload: { streamId: string; title: string; requestedByUserId: string; requestedByUsername: string },
+  ) {
+    this.server.to(this.userRoom(hostUserId)).emit('streamJoinRequestReceived', payload);
+  }
+
+  emitStreamJoinRequestResolved(
+    userId: string,
+    payload: {
+      streamId: string;
+      title: string;
+      hostUserId: string;
+      hostUsername: string;
+      decision: 'accepted' | 'declined';
+    },
+  ) {
+    this.server.to(this.userRoom(userId)).emit('streamJoinRequestResolved', payload);
+  }
+
+  emitStreamSharedNotification(
+    userId: string,
+    payload: {
+      streamId: string;
+      title: string;
+      sharedByUserId: string;
+      sharedByUsername: string;
+    },
+  ) {
+    this.server.to(this.userRoom(userId)).emit('streamSharedReceived', payload);
+  }
+
   emitMediaStateUpdated(
     streamId: string,
     payload: {

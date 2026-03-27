@@ -3,6 +3,7 @@ import { MessageCircle, MoveLeft, Send } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { useSocial, type SocialUser } from '../../../hooks/useSocial';
 import { useToast } from '../../../components/ToastProvider';
+import { renderMessageWithLiveLinks } from '../../../lib/liveLinks';
 
 export default function MessagesPage() {
   const { userId } = useParams();
@@ -159,7 +160,7 @@ export default function MessagesPage() {
                     : 'mr-10 bg-white/10 text-zinc-200'
                 }`}
               >
-                {message.message}
+                {renderMessageWithLiveLinks(message.message)}
               </div>
             ))
           ) : (

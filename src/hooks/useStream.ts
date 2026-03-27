@@ -29,6 +29,12 @@ export type Stream = {
     avatarUrl?: string;
     joinedAt: string;
   }>;
+  joinRequests: Array<{
+    userId: string;
+    username: string;
+    avatarUrl?: string;
+    requestedAt: string;
+  }>;
 };
 
 export type StreamComment = {
@@ -76,6 +82,7 @@ export type StreamParticipantRemovedEvent = {
 export type StreamParticipantUpdatedEvent = {
   streamId: string;
   participants: Stream['participants'];
+  joinRequests?: Stream['joinRequests'];
   orientation?: Stream['orientation'];
   mode?: Stream['mode'];
 };
@@ -168,6 +175,7 @@ export function useStream() {
           ? {
               ...prev,
               participants: payload.participants,
+              joinRequests: payload.joinRequests ?? prev.joinRequests,
               orientation: payload.orientation ?? prev.orientation,
               mode: payload.mode ?? prev.mode,
             }
@@ -175,6 +183,20 @@ export function useStream() {
       );
       setRecentParticipantUpdated(payload);
     });
+
+    socketRef.current.on(
+      'streamJoinRequestsUpdated',
+      (payload: { streamId: string; joinRequests: Stream['joinRequests'] }) => {
+        setStream((prev) =>
+          prev && prev._id === payload.streamId
+            ? {
+                ...prev,
+                joinRequests: payload.joinRequests,
+              }
+            : prev,
+        );
+      },
+    );
 
     socketRef.current.on('streamMediaStateUpdated', (payload: StreamMediaStateEvent) => {
       setRecentMediaState(payload);
@@ -247,7 +269,15 @@ export function useStream() {
   const inviteStreamer = async (streamId: string, streamerUserId: string) =>
     api.post(`/streams/${streamId}/invite`, { streamerUserId });
   const acceptInvite = async (streamId: string) => api.post(`/streams/${streamId}/accept-invite`);
+  const requestToJoinStream = async (streamId: string) => api.post(`/streams/${streamId}/request-join`);
+  const cancelJoinRequest = async (streamId: string) => api.delete(`/streams/${streamId}/request-join`);
+  const acceptJoinRequest = async (streamId: string, requestUserId: string) =>
+    api.post(`/streams/${streamId}/join-requests/${requestUserId}/accept`);
+  const declineJoinRequest = async (streamId: string, requestUserId: string) =>
+    api.post(`/streams/${streamId}/join-requests/${requestUserId}/decline`);
   const shareStream = async (streamId: string) => api.post(`/streams/${streamId}/share`);
+  const shareStreamDirectly = async (streamId: string, targetUserIds: string[]) =>
+    api.post(`/streams/${streamId}/share/direct`, { targetUserIds });
   const likeStream = async (streamId: string) => api.post(`/streams/${streamId}/like`);
   const commentOnStream = async (streamId: string, message: string) =>
     api.post(`/streams/${streamId}/comments`, { message });
@@ -333,7 +363,12 @@ export function useStream() {
     stopStream,
     inviteStreamer,
     acceptInvite,
+    requestToJoinStream,
+    cancelJoinRequest,
+    acceptJoinRequest,
+    declineJoinRequest,
     shareStream,
+    shareStreamDirectly,
     likeStream,
     commentOnStream,
     blockViewer,

@@ -9,6 +9,8 @@ import {
   Heart,
   Plus,
   Share2,
+  UserPlus,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/useAuth';
 import { useStream } from '../../../hooks/useStream';
@@ -140,7 +142,6 @@ export default function LiveStream() {
     fetchActiveStreams,
     fetchStream,
     likeStream,
-    shareStream,
     commentOnStream,
     giftStream,
     updateMediaState,
@@ -149,6 +150,10 @@ export default function LiveStream() {
     leaveRoom,
     inviteStreamer,
     acceptInvite,
+    requestToJoinStream,
+    cancelJoinRequest,
+    acceptJoinRequest,
+    declineJoinRequest,
     removeParticipant,
     leaveStreamParticipation,
     updateStreamLayout,
@@ -156,9 +161,10 @@ export default function LiveStream() {
     startStream,
     getConnectionDetails,
     saveRecording,
+    shareStreamDirectly,
     disconnect,
   } = useStream();
-  const { discoverUsers, friends, sendRequest, sendMessage, fetchSocial } = useSocial(true);
+  const { discoverUsers, friends, sendRequest, fetchSocial } = useSocial(true);
   const { fetchMatch, submitResultClaim, respondToResultClaim } = usePledges(false);
   const toast = useToast();
 
@@ -200,6 +206,7 @@ export default function LiveStream() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const stageVideoElementsRef = useRef<Record<string, HTMLVideoElement | null>>({});
+  const publishCapabilityRef = useRef(false);
 
   useEffect(() => {
     void fetchActiveStreams();
@@ -226,6 +233,12 @@ export default function LiveStream() {
   const isInvitedPending = currentParticipant?.role === 'invited';
   const isCoStreamerView = currentParticipant?.role === 'guest' && !isHostView;
   const canRemoveParticipants = isHostView && !isPledgeStream;
+  const currentJoinRequest = stream?.joinRequests?.find((request) => request.userId === user?._id) ?? null;
+  const canRequestToJoin =
+    Boolean(user?._id) &&
+    !isHostView &&
+    !isPledgeStream &&
+    !isParticipantView;
   const pendingClaim = pledgeMatch?.resultClaim?.status === 'pending' ? pledgeMatch.resultClaim : null;
   const isClaimOwner = Boolean(pendingClaim?.claimedByUserId && pendingClaim.claimedByUserId === user?._id);
   const canMakePledgeClaim = Boolean(
@@ -247,6 +260,7 @@ export default function LiveStream() {
     () => (stream?.participants ?? []).filter((participant) => participant.role === 'invited'),
     [stream?.participants],
   );
+  const pendingJoinRequests = useMemo(() => stream?.joinRequests ?? [], [stream?.joinRequests]);
   const removableParticipants = useMemo(
     () => (stream?.participants ?? []).filter((participant) => participant.role !== 'host'),
     [stream?.participants],
@@ -283,6 +297,18 @@ export default function LiveStream() {
       leaveRoom(resolvedStreamId);
     };
   }, [resolvedStreamId]);
+
+  useEffect(() => {
+    const canPublishNow = Boolean(currentParticipant && currentParticipant.role !== 'invited');
+    const gainedPublishCapability = canPublishNow && !publishCapabilityRef.current;
+    publishCapabilityRef.current = canPublishNow;
+
+    if (!gainedPublishCapability || !resolvedStreamId) {
+      return;
+    }
+
+    void handleReconnectToLive();
+  }, [currentParticipant?.role, resolvedStreamId]);
 
   useEffect(() => {
     if (!isPledgeStream || !stream?.matchId) {
@@ -786,29 +812,14 @@ export default function LiveStream() {
     setIsShareModalOpen(true);
   };
 
-  const getShareUrl = async () => {
-    if (!resolvedStreamId) {
-      return null;
-    }
-
-    try {
-      const result = await shareStream(resolvedStreamId);
-      return result.data?.shareUrl ?? stream?.shareUrl ?? null;
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Unable to share stream.');
-      return null;
-    }
-  };
-
   const handleShareToFriend = async (targetUserId: string) => {
-    const shareUrl = await getShareUrl();
-    if (!shareUrl) {
+    if (!resolvedStreamId) {
       return;
     }
 
     try {
       setSendingShareUserId(targetUserId);
-      await sendMessage(targetUserId, `Join my live stream: ${shareUrl}`);
+      await shareStreamDirectly(resolvedStreamId, [targetUserId]);
       toast.success('Live shared successfully.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to send live share.');
@@ -818,20 +829,20 @@ export default function LiveStream() {
   };
 
   const handleShareToFollowers = async () => {
+    if (!resolvedStreamId) {
+      return;
+    }
+
     if (!friends.length) {
       toast.info('You have no connected friends to share with yet.');
       return;
     }
 
-    const shareUrl = await getShareUrl();
-    if (!shareUrl) {
-      return;
-    }
-
     try {
       setIsSharingToFollowers(true);
-      await Promise.all(
-        friends.map((friend) => sendMessage(friend.id, `Join my live stream: ${shareUrl}`)),
+      await shareStreamDirectly(
+        resolvedStreamId,
+        friends.map((friend) => friend.id),
       );
       toast.success('Live shared with your followers.');
       setIsShareModalOpen(false);
@@ -883,9 +894,79 @@ export default function LiveStream() {
       setIsSubmitting(true);
       await acceptInvite(resolvedStreamId);
       await fetchStream(resolvedStreamId);
+      await handleReconnectToLive();
       toast.success('You joined the live.');
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to accept invite.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRequestToJoin = async () => {
+    if (!resolvedStreamId) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await requestToJoinStream(resolvedStreamId);
+      await fetchStream(resolvedStreamId);
+      toast.success('Your join request was sent.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to send join request.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelJoinRequest = async () => {
+    if (!resolvedStreamId) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await cancelJoinRequest(resolvedStreamId);
+      await fetchStream(resolvedStreamId);
+      toast.info('Your join request was removed.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to remove join request.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAcceptJoinRequest = async (requestUserId: string) => {
+    if (!resolvedStreamId) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await acceptJoinRequest(resolvedStreamId, requestUserId);
+      await fetchStream(resolvedStreamId);
+      setIsInviting(false);
+      toast.success('Viewer added to the live.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to accept join request.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeclineJoinRequest = async (requestUserId: string) => {
+    if (!resolvedStreamId) {
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await declineJoinRequest(resolvedStreamId, requestUserId);
+      await fetchStream(resolvedStreamId);
+      toast.info('Join request declined.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message ?? 'Unable to decline join request.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1315,10 +1396,13 @@ export default function LiveStream() {
           isPledgeStream={isPledgeStream}
           connectionStatus={connectionStatus}
           canOpenControls={isParticipantView}
+          pendingJoinRequestsCount={isHostView ? pendingJoinRequests.length : 0}
+          canOpenRequests={isHostView && !isPledgeStream}
           activeParticipant={activeParticipant}
           onBack={() => navigate(-1)}
           onClose={() => navigate('/home')}
           onOpenControlSheet={() => setShowControlSheet(true)}
+          onOpenRequests={() => setIsInviting(true)}
           onFollowHost={() => void handleFollowHost()}
           onShare={() => void handleShare()}
           recordingDurationLabel={recordingDurationLabel}
@@ -1402,9 +1486,28 @@ export default function LiveStream() {
             ))}
           </AnimatePresence>
 
-          {!isParticipantView && (
-            <button onClick={(event) => { event.stopPropagation(); void handleLike(); }} className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white transition-transform backdrop-blur-md hover:scale-110">
-              <Heart size={26} className="text-white" />
+          {canRequestToJoin && (
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                if (currentJoinRequest) {
+                  void handleCancelJoinRequest();
+                  return;
+                }
+                void handleRequestToJoin();
+              }}
+              title={
+                currentJoinRequest
+                  ? `Cancel request to join ${host?.username ?? 'the host'}`
+                  : `Request to join ${host?.username ?? 'the host'}`
+              }
+              className={`flex h-12 w-12 items-center justify-center rounded-full border text-white transition-transform backdrop-blur-md hover:scale-110 ${
+                currentJoinRequest
+                  ? 'border-white/10 bg-white/10'
+                  : 'border-brand-primary/30 bg-brand-primary/85'
+              }`}
+            >
+              {currentJoinRequest ? <X size={22} /> : <UserPlus size={22} />}
             </button>
           )}
 
@@ -1417,10 +1520,6 @@ export default function LiveStream() {
           <button onClick={(event) => { event.stopPropagation(); void handleShare(); }} className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white transition-transform backdrop-blur-md hover:scale-110">
             <Share2 size={24} />
           </button>
-
-          <div className="rounded-full border border-white/10 bg-black/40 px-3 py-2 text-center text-[10px] font-black uppercase tracking-[0.14em] text-white backdrop-blur-md">
-            {stream?.likesCount ?? 0}
-          </div>
           </div>
         </div>
 
@@ -1596,10 +1695,17 @@ export default function LiveStream() {
         open={isInviting}
         canShow={isHostView && !isPledgeStream}
         pendingInvites={pendingInvites}
+        joinRequests={pendingJoinRequests}
         inviteCandidates={inviteCandidates}
         onClose={() => setIsInviting(false)}
         onInvite={(targetUserId) => {
           void handleInvite(targetUserId);
+        }}
+        onAcceptJoinRequest={(targetUserId) => {
+          void handleAcceptJoinRequest(targetUserId);
+        }}
+        onDeclineJoinRequest={(targetUserId) => {
+          void handleDeclineJoinRequest(targetUserId);
         }}
         onRemoveParticipant={(participantUserId, participantUsername) => {
           void handleRemoveParticipant(participantUserId, participantUsername);

@@ -34,6 +34,6 @@ import { SocialComment, SocialCommentSchema } from './schemas/social-comment.sch
   ],
   controllers: [SocialController],
   providers: [SocialService, SocialGateway, WsJwtGuard],
-  exports: [SocialService],
+  exports: [SocialService, SocialGateway],
 })
 export class SocialModule {}

@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useSocial } from '../hooks/useSocial';
 import { useToast } from './ToastProvider';
 import { useAuth } from '../hooks/useAuth';
+import { extractLiveLink } from '../lib/liveLinks';
 
 export function DirectMessageNotifications() {
   const { user } = useAuth();
@@ -25,12 +26,17 @@ export function DirectMessageNotifications() {
 
     seenMessageIdsRef.current.add(latestMessage._id);
 
-    const isLiveShare = latestMessage.message.includes('/stream?streamId=');
-    toast.info(latestMessage.message, {
+    const liveLink = extractLiveLink(latestMessage.message);
+    const isLiveShare = Boolean(liveLink);
+    toast.info(
+      isLiveShare
+        ? 'Open your messages or notifications to jump into the shared live.'
+        : latestMessage.message,
+      {
       title: isLiveShare
         ? `${latestMessage.fromUsername || 'A friend'} shared a live`
         : `New message from ${latestMessage.fromUsername || 'a friend'}`,
-      duration: isLiveShare ? 7000 : 5000,
+      duration: isLiveShare ? 5000 : 5000,
     });
   }, [messages, toast]);
 

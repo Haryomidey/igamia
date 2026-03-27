@@ -11,6 +11,8 @@ import {
   Calendar,
   DollarSign,
   RefreshCcw,
+  MessageSquareMore,
+  UserRoundPlus,
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
@@ -19,6 +21,7 @@ import { usePledges } from '../../../hooks/usePledges';
 import { useStream } from '../../../hooks/useStream';
 import { useWallet } from '../../../hooks/useWallet';
 import { useToast } from '../../../components/ToastProvider';
+import { useSocial } from '../../../hooks/useSocial';
 
 function formatViewers(value: number) {
   return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : `${value}`;
@@ -32,6 +35,7 @@ export default function Home() {
   const toast = useToast();
   const { user, isAuthenticated } = useAuth();
   const { walletData } = useWallet(isAuthenticated);
+  const { friends, discoverUsers } = useSocial(isAuthenticated);
   const { featuredGames, loading: gamesLoading, error: gamesError, fetchGames, fetchFeaturedGames } = useGames({ search });
   const { activities, loading: pledgesLoading, error: pledgesError, fetchMatches } = usePledges(true);
   const { activeStreams, loading: streamsLoading, error: streamsError, fetchActiveStreams } = useStream();
@@ -288,6 +292,62 @@ export default function Home() {
             )}
           </div>
         )}
+      </section>
+
+      <section className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-black uppercase tracking-widest text-white italic">Community</h2>
+          <Link to="/social" className="text-brand-primary text-xs font-bold uppercase tracking-widest hover:text-brand-accent transition-colors">
+            Open Community
+          </Link>
+        </div>
+
+        <div className="grid gap-6 lg:grid-cols-[1.3fr,0.7fr]">
+          <Link
+            to="/social"
+            className="group relative overflow-hidden rounded-[2.5rem] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(157,124,240,0.18),transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-8 transition-transform hover:-translate-y-1"
+          >
+            <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-brand-primary/15 blur-3xl" />
+            <div className="relative max-w-xl space-y-4">
+              <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-primary/20 text-brand-primary">
+                <MessageSquareMore size={24} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Community Hub</p>
+                <h3 className="mt-3 text-3xl font-black uppercase italic text-white">
+                  Jump into chat, posts, and live invites
+                </h3>
+              </div>
+              <p className="max-w-lg text-sm leading-relaxed text-zinc-300">
+                Open the community from home to catch shared live links, answer invites, and move straight into direct messages and social posts.
+              </p>
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white transition-colors group-hover:bg-brand-primary group-hover:text-white">
+                Go To Community <ChevronRight size={14} />
+              </div>
+            </div>
+          </Link>
+
+          <div className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
+            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-500">Quick Snapshot</p>
+            <div className="mt-5 grid gap-4">
+              <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-accent">Connected Friends</p>
+                <p className="mt-2 text-3xl font-black text-white">{friends.length}</p>
+              </div>
+              <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-accent">People To Meet</p>
+                <p className="mt-2 text-3xl font-black text-white">{discoverUsers.length}</p>
+              </div>
+              <Link
+                to="/social"
+                className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-brand-primary px-5 py-4 text-[10px] font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-brand-accent hover:text-black"
+              >
+                <UserRoundPlus size={14} />
+                Explore Community
+              </Link>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="space-y-6">

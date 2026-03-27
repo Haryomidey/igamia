@@ -6,6 +6,7 @@ import {
   Share2,
   Users,
   UserPlus,
+  UserRoundSearch,
   MoreVertical,
   X,
 } from 'lucide-react';
@@ -22,12 +23,15 @@ export function StreamHeader({
   isPledgeStream,
   connectionStatus,
   canOpenControls,
+  pendingJoinRequestsCount,
+  canOpenRequests,
   activeParticipant,
   recordingDurationLabel,
   isSavingRecording,
   onBack,
   onClose,
   onOpenControlSheet,
+  onOpenRequests,
   onFollowHost,
   onShare,
 }: {
@@ -39,12 +43,15 @@ export function StreamHeader({
   isPledgeStream: boolean;
   connectionStatus: ConnectionStatus;
   canOpenControls: boolean;
+  pendingJoinRequestsCount?: number;
+  canOpenRequests?: boolean;
   activeParticipant?: Stream['participants'][number];
   recordingDurationLabel?: string | null;
   isSavingRecording?: boolean;
   onBack: () => void;
   onClose: () => void;
   onOpenControlSheet: () => void;
+  onOpenRequests?: () => void;
   onFollowHost: () => void;
   onShare: () => void;
 }) {
@@ -143,6 +150,24 @@ export function StreamHeader({
           >
             <Share2 size={18} />
           </button>
+          {canOpenRequests && onOpenRequests && (
+            <div className="relative">
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenRequests();
+                }}
+                className="flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white backdrop-blur-md transition-colors hover:bg-black/55"
+              >
+                <UserRoundSearch size={18} />
+              </button>
+              {pendingJoinRequestsCount ? (
+                <span className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-brand-accent px-1 text-[9px] font-black text-black">
+                  {pendingJoinRequestsCount > 9 ? '9+' : pendingJoinRequestsCount}
+                </span>
+              ) : null}
+            </div>
+          )}
           {canOpenControls && (
             <button
               onClick={(event) => {

@@ -3,6 +3,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { StreamsService } from './streams.service';
 import { StreamsGateway } from './streams.gateway';
+import { SocialGateway } from '../social/social.gateway';
 import { StartStreamDto } from './dto/start-stream.dto';
 import { InviteStreamerDto } from './dto/invite-streamer.dto';
 import { CommentStreamDto } from './dto/comment-stream.dto';
@@ -15,6 +16,7 @@ export class StreamsController {
   constructor(
     private readonly streamsService: StreamsService,
     private readonly streamsGateway: StreamsGateway,
+    private readonly socialGateway: SocialGateway,
   ) {}
 
   @Get('active')
@@ -75,11 +77,94 @@ export class StreamsController {
   ) {
     const result = await this.streamsService.inviteStreamer(streamId, user.sub, dto);
     this.streamsGateway.server.to(streamId).emit('streamerInvited', result);
+    this.socialGateway.emitDirectMessage(dto.streamerUserId, result.directMessage);
     this.streamsGateway.emitStreamInviteNotification(dto.streamerUserId, {
       streamId,
       hostUserId: user.sub,
       hostUsername: result.stream.participants.find((participant: { role: string; username: string }) => participant.role === 'host')?.username ?? 'Host',
       title: result.stream.title,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/request-join')
+  async requestToJoinStream(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    const result = await this.streamsService.requestToJoinStream(streamId, user.sub);
+    this.streamsGateway.server.to(streamId).emit('streamJoinRequestsUpdated', {
+      streamId,
+      joinRequests: result.stream.joinRequests,
+    });
+    this.streamsGateway.emitStreamJoinRequestNotification(result.stream.hostUserId.toString(), {
+      streamId,
+      title: result.stream.title,
+      requestedByUserId: result.request.userId,
+      requestedByUsername: result.request.username,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':streamId/request-join')
+  async cancelJoinRequest(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    const result = await this.streamsService.cancelJoinRequest(streamId, user.sub);
+    this.streamsGateway.server.to(streamId).emit('streamJoinRequestsUpdated', {
+      streamId,
+      joinRequests: result.stream.joinRequests,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/join-requests/:requestUserId/accept')
+  async acceptJoinRequest(
+    @Param('streamId') streamId: string,
+    @Param('requestUserId') requestUserId: string,
+    @CurrentUser() user: { sub: string; username: string },
+  ) {
+    const result = await this.streamsService.acceptJoinRequest(streamId, user.sub, requestUserId);
+    this.streamsGateway.server.to(streamId).emit('streamJoinRequestsUpdated', {
+      streamId,
+      joinRequests: result.stream.joinRequests,
+    });
+    this.streamsGateway.server.to(streamId).emit('streamParticipantUpdated', {
+      streamId,
+      participants: result.stream.participants,
+    });
+    this.streamsGateway.emitStreamJoinRequestResolved(requestUserId, {
+      streamId,
+      title: result.stream.title,
+      hostUserId: user.sub,
+      hostUsername: user.username,
+      decision: 'accepted',
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/join-requests/:requestUserId/decline')
+  async declineJoinRequest(
+    @Param('streamId') streamId: string,
+    @Param('requestUserId') requestUserId: string,
+    @CurrentUser() user: { sub: string; username: string },
+  ) {
+    const result = await this.streamsService.declineJoinRequest(streamId, user.sub, requestUserId);
+    this.streamsGateway.server.to(streamId).emit('streamJoinRequestsUpdated', {
+      streamId,
+      joinRequests: result.stream.joinRequests,
+    });
+    this.streamsGateway.emitStreamJoinRequestResolved(requestUserId, {
+      streamId,
+      title: result.stream.title,
+      hostUserId: user.sub,
+      hostUsername: user.username,
+      decision: 'declined',
     });
     return result;
   }
@@ -122,6 +207,30 @@ export class StreamsController {
     this.streamsGateway.server.to(streamId).emit('streamShared', {
       streamId,
       sharesCount: result.sharesCount,
+    });
+    return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/share/direct')
+  async shareStreamDirectly(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+    @Body() body: { targetUserIds: string[] },
+  ) {
+    const result = await this.streamsService.shareStreamDirectly(streamId, user.sub, body.targetUserIds ?? []);
+    this.streamsGateway.server.to(streamId).emit('streamShared', {
+      streamId,
+      sharesCount: result.sharesCount,
+    });
+    result.targetUserIds.forEach((targetUserId, index) => {
+      this.socialGateway.emitDirectMessage(targetUserId, result.directMessages[index]);
+      this.streamsGateway.emitStreamSharedNotification(targetUserId, {
+        streamId,
+        title: result.stream.title,
+        sharedByUserId: user.sub,
+        sharedByUsername: result.senderUsername,
+      });
     });
     return result;
   }

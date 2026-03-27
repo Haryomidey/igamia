@@ -174,14 +174,18 @@ export function InvitePlayersModal({
   open,
   canShow,
   pendingInvites,
+  joinRequests,
   inviteCandidates,
   onClose,
   onInvite,
+  onAcceptJoinRequest,
+  onDeclineJoinRequest,
   onRemoveParticipant,
 }: {
   open: boolean;
   canShow: boolean;
   pendingInvites: Stream['participants'];
+  joinRequests: Stream['joinRequests'];
   inviteCandidates: Array<{
     id: string;
     username: string;
@@ -190,6 +194,8 @@ export function InvitePlayersModal({
   }>;
   onClose: () => void;
   onInvite: (targetUserId: string) => void;
+  onAcceptJoinRequest: (targetUserId: string) => void;
+  onDeclineJoinRequest: (targetUserId: string) => void;
   onRemoveParticipant: (participantUserId: string, participantUsername: string) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -208,6 +214,13 @@ export function InvitePlayersModal({
         return haystack.includes(normalizedQuery);
       }),
     [inviteCandidates, normalizedQuery],
+  );
+  const filteredJoinRequests = useMemo(
+    () =>
+      joinRequests.filter((request) =>
+        request.username.toLowerCase().includes(normalizedQuery),
+      ),
+    [joinRequests, normalizedQuery],
   );
 
   return (
@@ -255,6 +268,45 @@ export function InvitePlayersModal({
                       >
                         Remove
                       </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {filteredJoinRequests.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-zinc-500 sm:text-[10px] sm:tracking-[0.24em]">
+                    Viewer Join Requests
+                  </p>
+                  {filteredJoinRequests.map((request) => (
+                    <div
+                      key={request.userId}
+                      className="rounded-3xl border border-white/10 bg-white/5 p-3"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-black uppercase italic text-white sm:text-sm">
+                            {request.username}
+                          </p>
+                          <p className="mt-1 text-[9px] font-black uppercase tracking-[0.16em] text-brand-accent sm:text-[10px] sm:tracking-[0.2em]">
+                            Wants to join on stream
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => onDeclineJoinRequest(request.userId)}
+                            className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[9px] font-black uppercase tracking-[0.16em] text-white transition-colors hover:bg-white/10 sm:text-[10px] sm:tracking-[0.2em]"
+                          >
+                            Decline
+                          </button>
+                          <button
+                            onClick={() => onAcceptJoinRequest(request.userId)}
+                            className="rounded-xl bg-brand-primary px-3 py-3 text-[9px] font-black uppercase tracking-[0.16em] text-white hover:bg-brand-accent hover:text-black sm:text-[10px] sm:tracking-[0.2em]"
+                          >
+                            Accept
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>

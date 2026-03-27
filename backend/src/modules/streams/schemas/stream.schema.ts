@@ -23,6 +23,21 @@ class StreamParticipant {
   joinedAt: Date;
 }
 
+@Schema({ _id: false })
+class StreamJoinRequest {
+  @Prop({ type: Types.ObjectId, ref: User.name, required: true })
+  userId: Types.ObjectId;
+
+  @Prop({ required: true })
+  username: string;
+
+  @Prop({ default: '' })
+  avatarUrl: string;
+
+  @Prop({ default: Date.now })
+  requestedAt: Date;
+}
+
 @Schema({ timestamps: true })
 export class Stream {
   @Prop({ type: Types.ObjectId, ref: User.name, required: true })
@@ -51,6 +66,9 @@ export class Stream {
 
   @Prop({ type: [StreamParticipant], default: [] })
   participants: StreamParticipant[];
+
+  @Prop({ type: [StreamJoinRequest], default: [] })
+  joinRequests: StreamJoinRequest[];
 
   @Prop({ type: [Types.ObjectId], default: [] })
   blockedUserIds: Types.ObjectId[];
