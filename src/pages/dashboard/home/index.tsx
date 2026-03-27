@@ -326,27 +326,7 @@ export default function Home() {
               </div>
             </div>
           </Link>
-
-          <div className="rounded-[2.5rem] border border-white/10 bg-white/5 p-6">
-            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-zinc-500">Quick Snapshot</p>
-            <div className="mt-5 grid gap-4">
-              <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-accent">Connected Friends</p>
-                <p className="mt-2 text-3xl font-black text-white">{friends.length}</p>
-              </div>
-              <div className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-brand-accent">People To Meet</p>
-                <p className="mt-2 text-3xl font-black text-white">{discoverUsers.length}</p>
-              </div>
-              <Link
-                to="/social"
-                className="inline-flex items-center justify-center gap-2 rounded-[1.5rem] bg-brand-primary px-5 py-4 text-[10px] font-black uppercase tracking-[0.18em] text-white transition-colors hover:bg-brand-accent hover:text-black"
-              >
-                <UserRoundPlus size={14} />
-                Explore Community
-              </Link>
-            </div>
-          </div>
+          
         </div>
       </section>
 
