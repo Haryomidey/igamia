@@ -7,6 +7,8 @@ import {
   ChevronUp,
   Gift,
   Heart,
+  Monitor,
+  MonitorOff,
   Plus,
   Share2,
   UserPlus,
@@ -127,6 +129,26 @@ function formatElapsedDuration(totalSeconds: number) {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+function getTileSource(publication?: { source?: Track.Source } | null, track?: { source?: Track.Source } | null) {
+  const source = publication?.source ?? track?.source;
+  return source === Track.Source.ScreenShare ? 'screen' : 'camera';
+}
+
+function formatLayoutLabel(orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only') {
+  switch (orientation) {
+    case 'vertical':
+      return 'Stacked';
+    case 'horizontal':
+      return 'Split';
+    case 'pip':
+      return 'PiP';
+    case 'screen-only':
+      return 'Screen Only';
+    default:
+      return orientation;
+  }
+}
+
 export default function LiveStream() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -208,7 +230,7 @@ export default function LiveStream() {
     title: '',
     description: '',
     category: 'General',
-    orientation: 'horizontal' as 'vertical' | 'horizontal' | 'pip',
+    orientation: 'horizontal' as 'vertical' | 'horizontal' | 'pip' | 'screen-only',
   });
   const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const livekitRoomRef = useRef<Room | null>(null);
@@ -296,12 +318,22 @@ export default function LiveStream() {
     const activeIds = new Set(stageParticipants.map((participant) => participant.userId));
     return videoTiles.filter((tile) => activeIds.has(tile.participantUserId));
   }, [stageParticipants, videoTiles]);
+  const localScreenShareTile = useMemo(
+    () => visibleVideoTiles.find((tile) => tile.isLocal && tile.source === 'screen') ?? null,
+    [visibleVideoTiles],
+  );
+  const isScreenSharing = Boolean(localScreenShareTile);
   const recordingDurationLabel = useMemo(
     () => (isRecording ? formatElapsedDuration(recordingDurationSeconds) : null),
     [isRecording, recordingDurationSeconds],
   );
   const primaryTile = useMemo(
-    () => visibleVideoTiles.find((tile) => tile.participantUserId === user?._id) ?? visibleVideoTiles[0] ?? null,
+    () =>
+      visibleVideoTiles.find((tile) => tile.isLocal && tile.source === 'screen') ??
+      visibleVideoTiles.find((tile) => tile.isLocal && tile.source === 'camera') ??
+      visibleVideoTiles.find((tile) => tile.participantUserId === user?._id) ??
+      visibleVideoTiles[0] ??
+      null,
     [user?._id, visibleVideoTiles],
   );
   const isStreamEndedForViewer = Boolean(streamEndedOverlay && !isHostView);
@@ -611,7 +643,12 @@ export default function LiveStream() {
       setLiveParticipants(nextParticipants);
     };
 
-    const addVideoTrack = (track: Track, participant: Participant, isLocal: boolean) => {
+    const addVideoTrack = (
+      track: Track,
+      participant: Participant,
+      isLocal: boolean,
+      source: VideoTile['source'],
+    ) => {
       if (track.kind !== Track.Kind.Video) {
         return;
       }
@@ -620,8 +657,19 @@ export default function LiveStream() {
       const participantUserId = resolveLiveParticipantUserId(participant);
       setVideoTiles((current) => {
         const next = current.filter((tile) => tile.id !== id);
-        next.push({ id, participantUserId, participantName: participantLabel(participant), isLocal, track });
-        next.sort((left, right) => Number(right.isLocal) - Number(left.isLocal));
+        next.push({
+          id,
+          participantUserId,
+          participantName: participantLabel(participant),
+          isLocal,
+          track,
+          source,
+        });
+        next.sort((left, right) => {
+          const leftWeight = Number(left.source === 'screen') * 2 + Number(left.isLocal);
+          const rightWeight = Number(right.source === 'screen') * 2 + Number(right.isLocal);
+          return rightWeight - leftWeight;
+        });
         return next;
       });
       setLiveParticipants((current) => ({
@@ -653,7 +701,7 @@ export default function LiveStream() {
 
         const id = `${participant.sid}-${publication.trackSid}`;
         if (publication.track.kind === Track.Kind.Video) {
-          addVideoTrack(publication.track, participant, false);
+          addVideoTrack(publication.track, participant, false, getTileSource(publication, publication.track));
           return;
         }
 
@@ -681,7 +729,7 @@ export default function LiveStream() {
             }
             const id = `${participant.sid}-${publication.trackSid}`;
             if (track.kind === Track.Kind.Video) {
-              addVideoTrack(track, participant, false);
+              addVideoTrack(track, participant, false, getTileSource(publication, track));
               return;
             }
             if (track.kind === Track.Kind.Audio) {
@@ -701,7 +749,7 @@ export default function LiveStream() {
               return;
             }
             if (publication.track?.kind === Track.Kind.Video) {
-              addVideoTrack(publication.track, participant, true);
+              addVideoTrack(publication.track, participant, true, getTileSource(publication, publication.track));
             }
           });
 
@@ -780,7 +828,7 @@ export default function LiveStream() {
 
           room.localParticipant.videoTrackPublications.forEach((publication) => {
             if (publication.track) {
-              addVideoTrack(publication.track, room.localParticipant, true);
+              addVideoTrack(publication.track, room.localParticipant, true, getTileSource(publication, publication.track));
             }
           });
 
@@ -1184,6 +1232,32 @@ export default function LiveStream() {
     });
   };
 
+  const handleToggleScreenShare = async () => {
+    const room = livekitRoomRef.current;
+    if (!room || !resolvedStreamId || !isParticipantView) {
+      return;
+    }
+
+    try {
+      const nextEnabled = !isScreenSharing;
+      await room.localParticipant.setScreenShareEnabled(nextEnabled, {
+        audio: true,
+      });
+
+      if (nextEnabled && isHostView && stream?.orientation === 'vertical') {
+        await updateStreamLayout(resolvedStreamId, 'pip');
+      }
+
+      toast.success(nextEnabled ? 'Screen sharing started.' : 'Screen sharing stopped.');
+    } catch (err: any) {
+      toast.error(
+        err?.message?.includes('Permission')
+          ? 'Screen share permission was blocked.'
+          : err?.message ?? 'Unable to update screen sharing.',
+      );
+    }
+  };
+
   const handleRemoveParticipant = async (participantUserId: string, participantUsername: string) => {
     if (!resolvedStreamId) {
       return;
@@ -1343,10 +1417,12 @@ export default function LiveStream() {
     const videoTrack =
       ((primaryTile.track as any)?.mediaStreamTrack as MediaStreamTrack | undefined) ??
       stageVideoElementsRef.current[primaryTile.participantUserId]?.captureStream?.().getVideoTracks()[0];
-    const localAudioPublication = Array.from(
-      livekitRoomRef.current?.localParticipant.audioTrackPublications.values() ?? [],
-    ).find(hasTrackPublication);
-    const localAudioTrack = localAudioPublication?.track;
+    const localAudioPublication =
+      Array.from(livekitRoomRef.current?.localParticipant.audioTrackPublications.values() ?? []).find(
+        (publication) => (publication as { source?: Track.Source }).source === Track.Source.ScreenShareAudio && hasTrackPublication(publication),
+      ) ??
+      Array.from(livekitRoomRef.current?.localParticipant.audioTrackPublications.values() ?? []).find(hasTrackPublication);
+    const localAudioTrack = (localAudioPublication as { track?: { mediaStreamTrack?: MediaStreamTrack } } | undefined)?.track;
     const audioTrack =
       ((localAudioTrack as any)?.mediaStreamTrack as MediaStreamTrack | undefined) ??
       (audioTracks[0] ? ((audioTracks[0].track as any)?.mediaStreamTrack as MediaStreamTrack | undefined) : undefined);
@@ -1435,14 +1511,14 @@ export default function LiveStream() {
     setStartForm((current) => ({ ...current, [field]: value }));
   };
 
-  const handleChangeOrientation = async (orientation: 'vertical' | 'horizontal' | 'pip') => {
+  const handleChangeOrientation = async (orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only') => {
     if (!resolvedStreamId || !isHostView) {
       return;
     }
 
     try {
       await updateStreamLayout(resolvedStreamId, orientation);
-      toast.success(`Layout switched to ${orientation.toUpperCase()}.`);
+      toast.success(`Layout switched to ${formatLayoutLabel(orientation)}.`);
     } catch (err: any) {
       toast.error(err?.response?.data?.message ?? 'Unable to update stream layout.');
     }
@@ -1667,6 +1743,7 @@ export default function LiveStream() {
           onShare={() => void handleShare()}
           recordingDurationLabel={recordingDurationLabel}
           isSavingRecording={isSavingRecording}
+          isScreenSharing={isScreenSharing}
         />
 
         <AnimatePresence>
@@ -1768,6 +1845,23 @@ export default function LiveStream() {
               }`}
             >
               {currentJoinRequest ? <X size={22} /> : <UserPlus size={22} />}
+            </button>
+          )}
+
+          {isParticipantView && (
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                void handleToggleScreenShare();
+              }}
+              title={isScreenSharing ? 'Stop screen sharing' : 'Share your screen'}
+              className={`flex h-12 w-12 items-center justify-center rounded-full border text-white transition-transform backdrop-blur-md hover:scale-110 ${
+                isScreenSharing
+                  ? 'border-emerald-400/30 bg-emerald-500/20'
+                  : 'border-white/10 bg-black/40'
+              }`}
+            >
+              {isScreenSharing ? <MonitorOff size={22} /> : <Monitor size={22} />}
             </button>
           )}
 
@@ -1904,11 +1998,13 @@ export default function LiveStream() {
           }
           isMicMuted={isMicMuted}
           isCameraPaused={isCameraPaused}
+          isScreenSharing={isScreenSharing}
           isRecording={isRecording}
           isSavingRecording={isSavingRecording}
           onClose={() => setShowControlSheet(false)}
           onToggleMute={() => void handleToggleMute()}
           onToggleCamera={() => void handleToggleCamera()}
+          onToggleScreenShare={() => void handleToggleScreenShare()}
           onToggleRecording={() => void toggleRecording()}
           onOpenInviteModal={() => setIsInviting(true)}
           onLeaveLive={() => void handleLeaveLive()}

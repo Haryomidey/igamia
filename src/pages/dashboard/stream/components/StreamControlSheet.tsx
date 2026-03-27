@@ -8,6 +8,8 @@ import {
   Maximize,
   Mic,
   MicOff,
+  Monitor,
+  MonitorOff,
   PauseCircle,
   PlayCircle,
   Radio,
@@ -61,11 +63,13 @@ export function StreamControlSheet({
   pendingClaimLabel,
   isMicMuted,
   isCameraPaused,
+  isScreenSharing,
   isRecording,
   isSavingRecording,
   onClose,
   onToggleMute,
   onToggleCamera,
+  onToggleScreenShare,
   onToggleRecording,
   onOpenInviteModal,
   onLeaveLive,
@@ -84,11 +88,13 @@ export function StreamControlSheet({
   pendingClaimLabel?: string | null;
   isMicMuted: boolean;
   isCameraPaused: boolean;
+  isScreenSharing: boolean;
   isRecording: boolean;
   isSavingRecording: boolean;
   onClose: () => void;
   onToggleMute: () => void;
   onToggleCamera: () => void;
+  onToggleScreenShare: () => void;
   onToggleRecording: () => void;
   onOpenInviteModal: () => void;
   onLeaveLive: () => void;
@@ -114,7 +120,7 @@ export function StreamControlSheet({
             animate={{ y: 0 }}
             exit={{ y: 120 }}
             transition={{ type: 'spring', damping: 26, stiffness: 260 }}
-            className="absolute inset-x-0 bottom-0 rounded-t-[2rem] border-t border-white/10 bg-zinc-900/95 p-6 shadow-2xl backdrop-blur-xl"
+            className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-[2rem] border-t border-white/10 bg-zinc-900/95 p-6 shadow-2xl backdrop-blur-xl"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-6 flex items-center justify-between">
@@ -125,7 +131,7 @@ export function StreamControlSheet({
             </div>
 
             {canControlLive && (
-              <div className={`grid gap-4 ${isHostView && !isPledgeStream ? 'grid-cols-5' : 'grid-cols-4'}`}>
+              <div className={`grid gap-4 ${isHostView && !isPledgeStream ? 'grid-cols-3 sm:grid-cols-6' : 'grid-cols-3 sm:grid-cols-5'}`}>
                 <ControlButton
                   icon={isMicMuted ? MicOff : Mic}
                   label={isMicMuted ? 'Unmute' : 'Mute'}
@@ -137,6 +143,12 @@ export function StreamControlSheet({
                   label={isCameraPaused ? 'Camera On' : 'Camera Off'}
                   active={isCameraPaused}
                   onClick={onToggleCamera}
+                />
+                <ControlButton
+                  icon={isScreenSharing ? MonitorOff : Monitor}
+                  label={isScreenSharing ? 'Stop Share' : 'Share Screen'}
+                  active={isScreenSharing}
+                  onClick={onToggleScreenShare}
                 />
                 <ControlButton
                   icon={isRecording ? PauseCircle : PlayCircle}
@@ -161,19 +173,23 @@ export function StreamControlSheet({
                   <Layout size={18} className="text-blue-400" />
                   <span className="font-semibold text-white">Stream Orientation</span>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
-                    { id: 'vertical' as const, icon: Rows, label: 'Vertical' },
-                    { id: 'horizontal' as const, icon: Columns, label: 'Horizontal' },
+                    { id: 'vertical' as const, icon: Rows, label: isScreenSharing ? 'Stacked' : 'Vertical' },
+                    { id: 'horizontal' as const, icon: Columns, label: isScreenSharing ? 'Split' : 'Horizontal' },
                     { id: 'pip' as const, icon: Maximize, label: 'PiP' },
+                    { id: 'screen-only' as const, icon: Monitor, label: 'Screen Only' },
                   ].map((option) => (
                     <button
                       key={option.id}
                       onClick={() => onChangeOrientation(option.id)}
+                      disabled={option.id === 'screen-only' && !isScreenSharing}
                       className={`flex flex-col items-center gap-2 rounded-2xl p-3 transition-all ${
                         stream?.orientation === option.id
                           ? 'bg-white text-black'
-                          : 'bg-white/5 text-white/65'
+                          : option.id === 'screen-only' && !isScreenSharing
+                            ? 'cursor-not-allowed bg-white/[0.03] text-white/30'
+                            : 'bg-white/5 text-white/65'
                       }`}
                     >
                       <option.icon size={20} />

@@ -14,5 +14,5 @@ export class StartStreamDto {
 
   @IsOptional()
   @IsString()
-  orientation?: 'vertical' | 'horizontal' | 'pip';
+  orientation?: 'vertical' | 'horizontal' | 'pip' | 'screen-only';
 }

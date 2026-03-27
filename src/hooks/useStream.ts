@@ -8,7 +8,7 @@ export type Stream = {
   title: string;
   description: string;
   category: string;
-  orientation: 'vertical' | 'horizontal' | 'pip';
+  orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only';
   mode: 'normal' | 'pledge';
   matchId?: string;
   status: 'live' | 'ended';

@@ -370,7 +370,7 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
         avatarUrl?: string;
         requestedAt: Date | string;
       }>;
-      orientation?: 'vertical' | 'horizontal' | 'pip';
+      orientation?: 'vertical' | 'horizontal' | 'pip' | 'screen-only';
       mode?: 'normal' | 'pledge';
     },
   ) {

@@ -208,7 +208,7 @@ export class StreamsService {
       : `Welcome to ${username} stream, please like, comment and support creator and be respectful.`;
     const category = dto.category?.trim() ? dto.category.trim().slice(0, 60) : 'General';
     const orientation =
-      dto.orientation === 'horizontal' || dto.orientation === 'pip'
+      dto.orientation && ['vertical', 'horizontal', 'pip', 'screen-only'].includes(dto.orientation)
         ? dto.orientation
         : 'horizontal';
 

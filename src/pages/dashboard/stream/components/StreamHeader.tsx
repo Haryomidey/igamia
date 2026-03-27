@@ -29,6 +29,7 @@ export function StreamHeader({
   activeParticipant,
   recordingDurationLabel,
   isSavingRecording,
+  isScreenSharing,
   onBack,
   onClose,
   onOpenControlSheet,
@@ -50,6 +51,7 @@ export function StreamHeader({
   activeParticipant?: Stream['participants'][number];
   recordingDurationLabel?: string | null;
   isSavingRecording?: boolean;
+  isScreenSharing?: boolean;
   onBack: () => void;
   onClose: () => void;
   onOpenControlSheet: () => void;
@@ -107,6 +109,11 @@ export function StreamHeader({
               {isHostView && isSavingRecording && (
                 <span className="rounded-full border border-brand-primary/20 bg-brand-primary/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-brand-primary">
                   Saving...
+                </span>
+              )}
+              {isScreenSharing && (
+                <span className="rounded-full border border-emerald-400/20 bg-emerald-500/12 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200">
+                  Screen Share
                 </span>
               )}
             </div>
