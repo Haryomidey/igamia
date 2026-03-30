@@ -48,6 +48,7 @@ export type SocialPost = {
       location?: string;
       preferences: string[];
     };
+    linkUrl?: string;
     boostedAt?: string;
   };
   createdAt?: string;
@@ -343,6 +344,7 @@ export function useSocial(autoLoad = true) {
       maxAge?: number | null;
       location?: string;
       preferences?: string[];
+      externalLink?: string;
     },
   ) => {
     const { data } = await api.post<SocialPost>(`/social/posts/${postId}/boost`, payload);

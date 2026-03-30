@@ -1,6 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  Clapperboard,
   ChevronDown,
   Columns,
   Layout,
@@ -13,6 +14,7 @@ import {
   PauseCircle,
   PlayCircle,
   Radio,
+  RefreshCcw,
   Rows,
   Trophy,
   UserPlus,
@@ -60,16 +62,20 @@ export function StreamControlSheet({
   isPledgeStream,
   canRespondToClaim,
   canClaimPledge,
+  canChangeOrientation,
   pendingClaimLabel,
   isMicMuted,
   isCameraPaused,
   isScreenSharing,
   isRecording,
   isSavingRecording,
+  hasSharedFile,
   onClose,
   onToggleMute,
   onToggleCamera,
+  onSwitchCamera,
   onToggleScreenShare,
+  onShareFile,
   onToggleRecording,
   onOpenInviteModal,
   onLeaveLive,
@@ -85,16 +91,20 @@ export function StreamControlSheet({
   isPledgeStream: boolean;
   canRespondToClaim: boolean;
   canClaimPledge: boolean;
+  canChangeOrientation: boolean;
   pendingClaimLabel?: string | null;
   isMicMuted: boolean;
   isCameraPaused: boolean;
   isScreenSharing: boolean;
   isRecording: boolean;
   isSavingRecording: boolean;
+  hasSharedFile: boolean;
   onClose: () => void;
   onToggleMute: () => void;
   onToggleCamera: () => void;
+  onSwitchCamera: () => void;
   onToggleScreenShare: () => void;
+  onShareFile: () => void;
   onToggleRecording: () => void;
   onOpenInviteModal: () => void;
   onLeaveLive: () => void;
@@ -151,6 +161,17 @@ export function StreamControlSheet({
                   onClick={onToggleScreenShare}
                 />
                 <ControlButton
+                  icon={RefreshCcw}
+                  label="Flip Camera"
+                  onClick={onSwitchCamera}
+                />
+                <ControlButton
+                  icon={Clapperboard}
+                  label={hasSharedFile ? 'Swap File' : 'Share File'}
+                  active={hasSharedFile}
+                  onClick={onShareFile}
+                />
+                <ControlButton
                   icon={isRecording ? PauseCircle : PlayCircle}
                   label={isSavingRecording ? 'Saving' : isRecording ? 'Stop Rec' : 'Record'}
                   active={isRecording || isSavingRecording}
@@ -167,18 +188,20 @@ export function StreamControlSheet({
               </div>
             )}
 
-            {(isHostView || isCoStreamerView) && (
+            {canChangeOrientation && (
               <div className="mt-6 border-t border-white/5 pt-6">
                 <div className="mb-4 flex items-center gap-2">
                   <Layout size={18} className="text-blue-400" />
                   <span className="font-semibold text-white">Stream Orientation</span>
                 </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                   {[
                     { id: 'vertical' as const, icon: Rows, label: isScreenSharing ? 'Stacked' : 'Vertical' },
                     { id: 'horizontal' as const, icon: Columns, label: isScreenSharing ? 'Split' : 'Horizontal' },
                     { id: 'pip' as const, icon: Maximize, label: 'PiP' },
                     { id: 'screen-only' as const, icon: Monitor, label: 'Screen Only' },
+                    { id: 'grid' as const, icon: Layout, label: 'Grid' },
+                    { id: 'host-focus' as const, icon: Maximize, label: 'Host Focus' },
                   ].map((option) => (
                     <button
                       key={option.id}

@@ -8,7 +8,7 @@ export type Stream = {
   title: string;
   description: string;
   category: string;
-  orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only';
+  orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only' | 'grid' | 'host-focus';
   mode: 'normal' | 'pledge';
   matchId?: string;
   status: 'live' | 'ended';
@@ -87,6 +87,19 @@ export type StreamParticipantUpdatedEvent = {
   mode?: Stream['mode'];
 };
 
+export type StreamPromotionEvent = {
+  streamId: string;
+  postId: string;
+  mediaUrl: string;
+  mediaType: 'image' | 'video';
+  content?: string;
+  shownByUserId: string;
+  shownByUsername: string;
+  durationSeconds: number;
+  linkUrl: string;
+  linkLabel: string;
+};
+
 export type StreamMediaStateEvent = {
   streamId: string;
   userId: string;
@@ -119,6 +132,7 @@ export function useStream() {
   const [recentParticipantRemoved, setRecentParticipantRemoved] = useState<StreamParticipantRemovedEvent | null>(null);
   const [recentParticipantUpdated, setRecentParticipantUpdated] = useState<StreamParticipantUpdatedEvent | null>(null);
   const [recentMediaState, setRecentMediaState] = useState<StreamMediaStateEvent | null>(null);
+  const [recentPromotion, setRecentPromotion] = useState<StreamPromotionEvent | null>(null);
   const [recentStreamStopped, setRecentStreamStopped] = useState<StreamStoppedEvent | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -241,6 +255,10 @@ export function useStream() {
 
     socketRef.current.on('streamMediaStateUpdated', (payload: StreamMediaStateEvent) => {
       setRecentMediaState(payload);
+    });
+
+    socketRef.current.on('streamPromotionShown', (payload: StreamPromotionEvent) => {
+      setRecentPromotion(payload);
     });
 
     socketRef.current.on('streamStopped', (payload: StreamStoppedEvent) => {
@@ -390,6 +408,10 @@ export function useStream() {
     streamId: string,
     payload: { amount: number; description: string },
   ) => api.post(`/streams/${streamId}/gift`, payload);
+  const promotePostInStream = async (
+    streamId: string,
+    payload: { postId: string; durationSeconds?: number },
+  ) => api.post(`/streams/${streamId}/promote-post`, payload);
   const updateMediaState = (
     streamId: string,
     payload: { isMuted: boolean; isCameraOff: boolean },
@@ -439,6 +461,7 @@ export function useStream() {
     recentParticipantRemoved,
     recentParticipantUpdated,
     recentMediaState,
+    recentPromotion,
     recentStreamStopped,
     loading,
     error,
@@ -466,6 +489,7 @@ export function useStream() {
     leaveStreamParticipation,
     updateStreamLayout,
     giftStream,
+    promotePostInStream,
     updateMediaState,
     getConnectionDetails,
     saveRecording,

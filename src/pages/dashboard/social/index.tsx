@@ -57,6 +57,7 @@ export default function Social() {
     maxAge: '',
     location: '',
     preferences: '',
+    externalLink: '',
   });
   const pendingPreviewUrlRef = useRef<string | null>(null);
   const toast = useToast();
@@ -444,6 +445,16 @@ export default function Social() {
                             Boost Active
                           </p>
                         )}
+                        {post.boost?.active && post.boost.linkUrl && (
+                          <a
+                            href={post.boost.linkUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 inline-flex rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-zinc-200"
+                          >
+                            Boost Link
+                          </a>
+                        )}
                       </div>
                     </div>
                     <button
@@ -570,6 +581,7 @@ export default function Social() {
                             maxAge: post.boost?.targeting.maxAge?.toString() ?? '',
                             location: post.boost?.targeting.location ?? '',
                             preferences: (post.boost?.targeting.preferences ?? []).join(', '),
+                            externalLink: post.boost?.linkUrl ?? '',
                           });
                           setActivePostAction({ postId: post._id, mode: 'boost' });
                         }}
@@ -925,6 +937,13 @@ export default function Social() {
                   placeholder="Preferences, comma separated"
                   className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none placeholder:text-zinc-600"
                 />
+                <input
+                  type="url"
+                  value={boostForm.externalLink}
+                  onChange={(event) => setBoostForm((current) => ({ ...current, externalLink: event.target.value }))}
+                  placeholder="External link for stream promo"
+                  className="rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-white outline-none placeholder:text-zinc-600 sm:col-span-2"
+                />
               </div>
 
               <button
@@ -943,6 +962,7 @@ export default function Social() {
                       maxAge: boostForm.maxAge ? Number(boostForm.maxAge) : null,
                       location: boostForm.location,
                       preferences: boostForm.preferences.split(',').map((entry) => entry.trim()).filter(Boolean),
+                      externalLink: boostForm.externalLink.trim(),
                     });
                     toast.success('Post boost updated.');
                     setActivePostAction(null);

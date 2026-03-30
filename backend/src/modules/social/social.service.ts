@@ -33,6 +33,7 @@ export type FeedPost = {
       location?: string;
       preferences: string[];
     };
+    linkUrl?: string;
     boostedAt?: Date;
   };
   createdAt?: Date;
@@ -106,6 +107,7 @@ export class SocialService {
               location: post.boost.targeting?.location ?? '',
               preferences: post.boost.targeting?.preferences ?? [],
             },
+            linkUrl: post.boost.linkUrl ?? '',
             boostedAt: post.boost.boostedAt,
           }
         : undefined,
@@ -625,6 +627,7 @@ export class SocialService {
       maxAge?: number | null;
       location?: string;
       preferences?: string[];
+      externalLink?: string;
     },
   ) {
     if (!Types.ObjectId.isValid(postId)) {
@@ -656,6 +659,7 @@ export class SocialService {
     post.boost = {
       active: true,
       boostedAt: new Date(),
+      linkUrl: payload.externalLink?.trim() ?? '',
       targeting: {
         minAge,
         maxAge,
@@ -666,6 +670,52 @@ export class SocialService {
     await post.save();
 
     return this.serializePost(post.toObject(), userId);
+  }
+
+  async getOwnedBoostedMediaPostForStream(postId: string, userId: string) {
+    if (!Types.ObjectId.isValid(postId)) {
+      throw new NotFoundException('Post not found');
+    }
+
+    const post = await this.socialPostModel.findById(postId).lean();
+    if (!post) {
+      throw new NotFoundException('Post not found');
+    }
+
+    if (post.userId.toString() !== userId) {
+      throw new BadRequestException('You can only promote your own boosted posts in a stream');
+    }
+
+    if (!post.boost?.active) {
+      throw new BadRequestException('Boost this post before promoting it in a stream');
+    }
+
+    if (post.mediaType !== 'image' && post.mediaType !== 'video') {
+      throw new BadRequestException('Only image or video posts can be shown to viewers in a stream');
+    }
+
+    if (!post.mediaUrl?.trim()) {
+      throw new BadRequestException('This post does not contain media to promote');
+    }
+
+    return post;
+  }
+
+  async listBoostedMediaPosts(excludedPostIds: string[] = []) {
+    const excludedObjectIds = excludedPostIds
+      .filter((postId) => Types.ObjectId.isValid(postId))
+      .map((postId) => this.objectId(postId));
+
+    return this.socialPostModel
+      .find({
+        _id: excludedObjectIds.length ? { $nin: excludedObjectIds } : { $exists: true },
+        'boost.active': true,
+        mediaType: { $in: ['image', 'video'] },
+        mediaUrl: { $exists: true, $nin: ['', null] },
+      })
+      .sort({ 'boost.boostedAt': -1, createdAt: -1 })
+      .limit(20)
+      .lean();
   }
 
   async reportPost(postId: string, userId: string) {

@@ -30,6 +30,26 @@ import { SendStreamGiftDto } from './dto/send-stream-gift.dto';
 export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
+  private readonly promotionTimers = new Map<string, NodeJS.Timeout>();
+  private readonly promotionShownPostIds = new Map<string, Set<string>>();
+  private readonly activePromotions = new Map<
+    string,
+    {
+      payload: {
+        streamId: string;
+        postId: string;
+        mediaUrl: string;
+        mediaType: 'image' | 'video';
+        content?: string;
+        shownByUserId: string;
+        shownByUsername: string;
+        durationSeconds: number;
+        linkUrl: string;
+        linkLabel: string;
+      };
+      expiresAt: number;
+    }
+  >();
 
   constructor(
     private readonly streamsService: StreamsService,
@@ -73,6 +93,53 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
       joinedUserId: joinedUser?.userId,
       joinedUsername: joinedUser?.username,
     });
+  }
+
+  private async emitNextPromotion(streamId: string) {
+    const shownPostIds = this.promotionShownPostIds.get(streamId) ?? new Set<string>();
+    const payload = await this.streamsService.getAutomaticPromotion(streamId, [...shownPostIds]);
+
+    if (!payload) {
+      return;
+    }
+
+    shownPostIds.add(payload.postId);
+    this.promotionShownPostIds.set(streamId, shownPostIds);
+    this.activePromotions.set(streamId, {
+      payload,
+      expiresAt: Date.now() + payload.durationSeconds * 1000,
+    });
+    this.emitStreamPromotion(streamId, payload);
+
+    setTimeout(() => {
+      const active = this.activePromotions.get(streamId);
+      if (active?.payload.postId === payload.postId) {
+        this.activePromotions.delete(streamId);
+      }
+    }, payload.durationSeconds * 1000);
+  }
+
+  startAutomaticPromotions(streamId: string) {
+    if (this.promotionTimers.has(streamId)) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      void this.emitNextPromotion(streamId);
+    }, 10 * 60 * 1000);
+
+    this.promotionTimers.set(streamId, timer);
+  }
+
+  stopAutomaticPromotions(streamId: string) {
+    const timer = this.promotionTimers.get(streamId);
+    if (timer) {
+      clearInterval(timer);
+      this.promotionTimers.delete(streamId);
+    }
+
+    this.promotionShownPostIds.delete(streamId);
+    this.activePromotions.delete(streamId);
   }
 
   handleConnection(client: Socket) {
@@ -126,11 +193,19 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
     await client.join(payload.streamId);
     client.data.currentStreamId = payload.streamId;
+    this.startAutomaticPromotions(payload.streamId);
     const user = client.data.user as { sub?: string; username?: string } | undefined;
     await this.emitPresenceUpdate(payload.streamId, {
       userId: user?.sub,
       username: user?.username,
     });
+    const activePromotion = this.activePromotions.get(payload.streamId);
+    if (activePromotion && activePromotion.expiresAt > Date.now()) {
+      (client as Socket & { emit: (event: string, payload: unknown) => void }).emit(
+        'streamPromotionShown',
+        activePromotion.payload,
+      );
+    }
     return { joined: true, streamId: payload.streamId };
   }
 
@@ -154,6 +229,7 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
   ) {
     const user = client.data.user as { sub: string; username: string };
     const stream = await this.streamsService.startStream(user.sub, user.username, dto);
+    this.startAutomaticPromotions(stream._id.toString());
     const followerIds = await this.streamsService.getFollowerIds(user.sub);
     await client.join(stream._id.toString());
     this.server.emit('streamStarted', stream);
@@ -172,6 +248,7 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @MessageBody() payload: { streamId: string; userId?: string },
   ) {
     const stream = await this.streamsService.stopStream(payload.streamId, payload.userId ?? _client.data.user.sub);
+    this.stopAutomaticPromotions(payload.streamId);
     this.server.to(payload.streamId).emit('streamStopped', stream);
     return stream;
   }
@@ -370,7 +447,7 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
         avatarUrl?: string;
         requestedAt: Date | string;
       }>;
-      orientation?: 'vertical' | 'horizontal' | 'pip' | 'screen-only';
+      orientation?: 'vertical' | 'horizontal' | 'pip' | 'screen-only' | 'grid' | 'host-focus';
       mode?: 'normal' | 'pledge';
     },
   ) {
@@ -390,5 +467,23 @@ export class StreamsGateway implements OnGatewayConnection, OnGatewayDisconnect 
     },
   ) {
     this.server.to(streamId).emit('streamStopped', payload);
+  }
+
+  emitStreamPromotion(
+    streamId: string,
+    payload: {
+      streamId: string;
+      postId: string;
+      mediaUrl: string;
+      mediaType: 'image' | 'video';
+      content?: string;
+      shownByUserId: string;
+      shownByUsername: string;
+      durationSeconds: number;
+      linkUrl: string;
+      linkLabel: string;
+    },
+  ) {
+    this.server.to(streamId).emit('streamPromotionShown', payload);
   }
 }

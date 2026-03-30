@@ -195,6 +195,16 @@ export default function PostPage() {
                 <MessageCircle size={14} />
                 {post.commentsCount ?? comments.length}
               </div>
+              {post.boost?.active && post.boost.linkUrl && (
+                <a
+                  href={post.boost.linkUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full bg-white/5 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-300"
+                >
+                  Open Boost Link
+                </a>
+              )}
             </div>
           </article>
 

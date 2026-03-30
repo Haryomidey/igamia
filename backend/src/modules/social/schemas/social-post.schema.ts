@@ -27,6 +27,9 @@ class PostBoost {
   @Prop({ type: PostBoostTargeting, default: () => ({}) })
   targeting!: PostBoostTargeting;
 
+  @Prop({ default: '' })
+  linkUrl!: string;
+
   @Prop()
   boostedAt?: Date;
 }

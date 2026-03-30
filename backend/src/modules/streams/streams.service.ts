@@ -93,6 +93,18 @@ export class StreamsService {
     }
   }
 
+  private ensureParticipantCanPublish(stream: StreamDocument, userId: string) {
+    const participant = stream.participants.find(
+      (entry: Stream['participants'][number]) => entry.userId.toString() === userId,
+    );
+
+    if (!participant || participant.role === 'invited') {
+      throw new ForbiddenException('Only active streamers can perform this action');
+    }
+
+    return participant;
+  }
+
   private ensureLive(stream: StreamDocument) {
     if (stream.status !== 'live') {
       throw new BadRequestException('This live stream has already ended');
@@ -208,7 +220,7 @@ export class StreamsService {
       : `Welcome to ${username} stream, please like, comment and support creator and be respectful.`;
     const category = dto.category?.trim() ? dto.category.trim().slice(0, 60) : 'General';
     const orientation =
-      dto.orientation && ['vertical', 'horizontal', 'pip', 'screen-only'].includes(dto.orientation)
+      dto.orientation && ['vertical', 'horizontal', 'pip', 'screen-only', 'grid', 'host-focus'].includes(dto.orientation)
         ? dto.orientation
         : 'horizontal';
 
@@ -926,6 +938,60 @@ export class StreamsService {
       streamTitle: stream.title,
       hostUserId: stream.hostUserId.toString(),
       earningsNgn: stream.earningsUsd,
+    };
+  }
+
+  async showPromotedPost(
+    streamId: string,
+    userId: string,
+    options: { postId: string; durationSeconds?: number },
+  ) {
+    const stream = await this.requireStream(streamId);
+    this.ensureLive(stream);
+    const participant = this.ensureParticipantCanPublish(stream, userId);
+    const post = await this.socialService.getOwnedBoostedMediaPostForStream(options.postId, userId);
+    const durationSeconds = Math.min(20, Math.max(4, Math.round(options.durationSeconds ?? 8)));
+    const fallbackLinkUrl = `${this.getPublicAppUrl()}/post/${post._id.toString()}`;
+    const externalLink = post.boost?.linkUrl?.trim() ?? '';
+
+    return {
+      streamId,
+      postId: post._id.toString(),
+      mediaUrl: post.mediaUrl,
+      mediaType: post.mediaType as 'image' | 'video',
+      content: post.content,
+      shownByUserId: userId,
+      shownByUsername: participant.username,
+      durationSeconds,
+      linkUrl: externalLink || fallbackLinkUrl,
+      linkLabel: externalLink ? 'Open Link' : 'Open Post',
+    };
+  }
+
+  async getAutomaticPromotion(streamId: string, excludedPostIds: string[] = []) {
+    const stream = await this.requireStream(streamId);
+    this.ensureLive(stream);
+    const posts = await this.socialService.listBoostedMediaPosts(excludedPostIds);
+    const nextPost = posts[0];
+
+    if (!nextPost) {
+      return null;
+    }
+
+    const fallbackLinkUrl = `${this.getPublicAppUrl()}/post/${nextPost._id.toString()}`;
+    const externalLink = nextPost.boost?.linkUrl?.trim() ?? '';
+
+    return {
+      streamId,
+      postId: nextPost._id.toString(),
+      mediaUrl: nextPost.mediaUrl,
+      mediaType: nextPost.mediaType as 'image' | 'video',
+      content: nextPost.content,
+      shownByUserId: nextPost.userId.toString(),
+      shownByUsername: nextPost.username,
+      durationSeconds: 8,
+      linkUrl: externalLink || fallbackLinkUrl,
+      linkLabel: externalLink ? 'Open Link' : 'Open Post',
     };
   }
 }

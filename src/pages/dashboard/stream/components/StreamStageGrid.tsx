@@ -78,6 +78,11 @@ function tileLayoutClass(count: number, index: number, orientation: Stream['orie
     return 'h-full w-full';
   }
 
+  if (orientation === 'grid') {
+    if (count === 2) return 'h-full w-1/2';
+    return 'h-1/2 w-1/2';
+  }
+
   if (orientation === 'horizontal') {
     if (count === 2) return 'h-full w-1/2';
     if (count === 3) return index < 2 ? 'h-full w-1/3' : 'h-1/2 w-full';
@@ -94,6 +99,36 @@ function ScreenShareBadge({ label }: { label: string }) {
     <div className="w-fit rounded-full border border-emerald-400/25 bg-emerald-500/15 px-2 py-0.5 text-[7px] font-bold uppercase tracking-[0.12em] text-emerald-200 backdrop-blur-md sm:text-[9px]">
       {label}
     </div>
+  );
+}
+
+function RemoveTileButton({
+  canRemoveParticipants,
+  currentUserId,
+  participantUserId,
+  participantUsername,
+  onRemoveParticipant,
+}: {
+  canRemoveParticipants: boolean;
+  currentUserId?: string;
+  participantUserId: string;
+  participantUsername: string;
+  onRemoveParticipant: (participantUserId: string, participantUsername: string) => void;
+}) {
+  if (!canRemoveParticipants || participantUserId === currentUserId) {
+    return null;
+  }
+
+  return (
+    <button
+      onClick={(event) => {
+        event.stopPropagation();
+        onRemoveParticipant(participantUserId, participantUsername);
+      }}
+      className="absolute right-3 top-3 z-20 rounded-full border border-white/10 bg-black/45 p-1.5 text-zinc-300 backdrop-blur-md transition-colors hover:text-white"
+    >
+      <X size={12} />
+    </button>
   );
 }
 
@@ -234,6 +269,13 @@ export function StreamStageGrid({
 
               return (
                 <div key={`${participant.userId}-screen-side`} className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black">
+                  <RemoveTileButton
+                    canRemoveParticipants={canRemoveParticipants}
+                    currentUserId={currentUserId}
+                    participantUserId={participant.userId}
+                    participantUsername={participant.username}
+                    onRemoveParticipant={onRemoveParticipant}
+                  />
                   {showPlaceholder ? (
                     <ParticipantPlaceholder
                       participant={participant}
@@ -276,17 +318,6 @@ export function StreamStageGrid({
                           <VideoOff size={12} />
                         </div>
                       )}
-                      {canRemoveParticipants && participant.userId !== currentUserId && (
-                        <button
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onRemoveParticipant(participant.userId, participant.username);
-                          }}
-                          className="rounded-full border border-white/10 bg-black/35 p-1.5 text-zinc-300 backdrop-blur-md transition-colors hover:text-white"
-                        >
-                          <X size={12} />
-                        </button>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -306,6 +337,13 @@ export function StreamStageGrid({
 
               return (
                 <div key={`${participant.userId}-screen-bottom`} className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-black">
+                  <RemoveTileButton
+                    canRemoveParticipants={canRemoveParticipants}
+                    currentUserId={currentUserId}
+                    participantUserId={participant.userId}
+                    participantUsername={participant.username}
+                    onRemoveParticipant={onRemoveParticipant}
+                  />
                   {showPlaceholder ? (
                     <ParticipantPlaceholder
                       participant={participant}
@@ -348,17 +386,6 @@ export function StreamStageGrid({
                           <VideoOff size={12} />
                         </div>
                       )}
-                      {canRemoveParticipants && participant.userId !== currentUserId && (
-                        <button
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onRemoveParticipant(participant.userId, participant.username);
-                          }}
-                          className="rounded-full border border-white/10 bg-black/35 p-1.5 text-zinc-300 backdrop-blur-md transition-colors hover:text-white"
-                        >
-                          <X size={12} />
-                        </button>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -381,6 +408,13 @@ export function StreamStageGrid({
                   key={`${participant.userId}-screen-pip`}
                   className="relative aspect-[9/16] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl"
                 >
+                  <RemoveTileButton
+                    canRemoveParticipants={canRemoveParticipants}
+                    currentUserId={currentUserId}
+                    participantUserId={participant.userId}
+                    participantUsername={participant.username}
+                    onRemoveParticipant={onRemoveParticipant}
+                  />
                   {showPlaceholder ? (
                     <ParticipantPlaceholder
                       participant={participant}
@@ -431,7 +465,7 @@ export function StreamStageGrid({
         const showPlaceholder = cameraOff || !tile;
         const isCurrentUserTile = participant.userId === currentUserId;
         const isSelected = cameraParticipants[0]?.participant.userId === participant.userId;
-        const isPipOverlay = orientation === 'pip' && index > 0;
+        const isPipOverlay = (orientation === 'pip' || orientation === 'host-focus') && index > 0;
 
         return (
           <div
@@ -465,10 +499,27 @@ export function StreamStageGrid({
                       : 'bottom-0 right-0'
                 : ''
             } ${
+              orientation === 'grid' && !isPipOverlay
+                ? index === 0
+                  ? 'left-0 top-0'
+                  : index === 1
+                    ? 'right-0 top-0'
+                    : index === 2
+                      ? 'bottom-0 left-0'
+                      : 'bottom-0 right-0'
+                : ''
+            } ${
               isSelected ? 'ring-2 ring-white/30' : 'opacity-95'
             }`}
             style={isPipOverlay ? { top: `${5 + (index - 1) * 9.5}rem` } : undefined}
           >
+            <RemoveTileButton
+              canRemoveParticipants={canRemoveParticipants}
+              currentUserId={currentUserId}
+              participantUserId={participant.userId}
+              participantUsername={participant.username}
+              onRemoveParticipant={onRemoveParticipant}
+            />
             {showPlaceholder ? (
               <ParticipantPlaceholder
                 participant={participant}
@@ -513,17 +564,6 @@ export function StreamStageGrid({
                   <div className="rounded-full border border-white/10 bg-black/35 p-1.5 text-brand-accent backdrop-blur-md sm:p-2">
                     <VideoOff size={12} />
                   </div>
-                )}
-                {canRemoveParticipants && participant.userId !== currentUserId && (
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onRemoveParticipant(participant.userId, participant.username);
-                    }}
-                    className="rounded-full border border-white/10 bg-black/35 p-1.5 text-zinc-300 backdrop-blur-md transition-colors hover:text-white sm:p-2"
-                  >
-                    <X size={12} />
-                  </button>
                 )}
               </div>
             </div>

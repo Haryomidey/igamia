@@ -116,6 +116,7 @@ export class SocialController {
       maxAge?: number | null;
       location?: string;
       preferences?: string[];
+      externalLink?: string;
     },
   ) {
     const post = await this.socialService.boostPost(postId, user.sub, body);

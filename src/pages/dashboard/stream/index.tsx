@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Room, RoomEvent, Track, type Participant, type TrackPublication } from 'livekit-client';
+import {
+  Room,
+  RoomEvent,
+  Track,
+  type LocalTrackPublication,
+  type LocalVideoTrack,
+  type Participant,
+  type TrackPublication,
+} from 'livekit-client';
 import {
   ChevronDown,
   ChevronUp,
@@ -15,7 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { useAuth } from '../../../hooks/useAuth';
-import { useStream } from '../../../hooks/useStream';
+import { useStream, type StreamPromotionEvent } from '../../../hooks/useStream';
 import { useSocial } from '../../../hooks/useSocial';
 import { usePledges, type MatchActivity } from '../../../hooks/usePledges';
 import { useToast } from '../../../components/ToastProvider';
@@ -58,6 +66,8 @@ type LiveParticipantSnapshot = {
   username: string;
   isLocal: boolean;
 };
+
+type CameraFacingMode = 'user' | 'environment';
 
 function participantLabel(participant: Participant) {
   return participant.name || participant.identity || 'Streamer';
@@ -129,12 +139,18 @@ function formatElapsedDuration(totalSeconds: number) {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
-function getTileSource(publication?: { source?: Track.Source } | null, track?: { source?: Track.Source } | null) {
+function getTileSource(
+  publication?: { source?: Track.Source; trackName?: string } | null,
+  track?: { source?: Track.Source } | null,
+) {
   const source = publication?.source ?? track?.source;
-  return source === Track.Source.ScreenShare ? 'screen' : 'camera';
+  const trackName = publication?.trackName?.toLowerCase() ?? '';
+  return source === Track.Source.ScreenShare || trackName.includes('file-share') ? 'screen' : 'camera';
 }
 
-function formatLayoutLabel(orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only') {
+function formatLayoutLabel(
+  orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only' | 'grid' | 'host-focus',
+) {
   switch (orientation) {
     case 'vertical':
       return 'Stacked';
@@ -144,9 +160,21 @@ function formatLayoutLabel(orientation: 'vertical' | 'horizontal' | 'pip' | 'scr
       return 'PiP';
     case 'screen-only':
       return 'Screen Only';
+    case 'grid':
+      return 'Grid';
+    case 'host-focus':
+      return 'Host Focus';
     default:
       return orientation;
   }
+}
+
+function isProbablyMobileDevice() {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return /android|iphone|ipad|ipod|mobile/i.test(window.navigator.userAgent);
 }
 
 export default function LiveStream() {
@@ -164,6 +192,7 @@ export default function LiveStream() {
     recentViewerJoin,
     recentParticipantRemoved,
     recentMediaState,
+    recentPromotion,
     recentStreamStopped,
     loading,
     error,
@@ -224,13 +253,16 @@ export default function LiveStream() {
   const [streamEndedOverlay, setStreamEndedOverlay] = useState<StreamEndedOverlay | null>(null);
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isCameraPaused, setIsCameraPaused] = useState(false);
+  const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>('user');
+  const [sharingFileName, setSharingFileName] = useState<string | null>(null);
+  const [activePromotion, setActivePromotion] = useState<StreamPromotionEvent | null>(null);
   const reconnectInFlightRef = useRef(false);
   const roomSessionRef = useRef(0);
   const [startForm, setStartForm] = useState({
     title: '',
     description: '',
     category: 'General',
-    orientation: 'horizontal' as 'vertical' | 'horizontal' | 'pip' | 'screen-only',
+    orientation: 'horizontal' as 'vertical' | 'horizontal' | 'pip' | 'screen-only' | 'grid' | 'host-focus',
   });
   const audioContainerRef = useRef<HTMLDivElement | null>(null);
   const livekitRoomRef = useRef<Room | null>(null);
@@ -241,6 +273,13 @@ export default function LiveStream() {
   const joinRequestCountRef = useRef(0);
   const autoReconnectTimeoutRef = useRef<number | null>(null);
   const autoReconnectAttemptsRef = useRef(0);
+  const fileShareInputRef = useRef<HTMLInputElement | null>(null);
+  const sharedMediaTrackRef = useRef<MediaStreamTrack | null>(null);
+  const sharedMediaElementRef = useRef<HTMLVideoElement | HTMLImageElement | null>(null);
+  const sharedMediaCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const sharedMediaStreamRef = useRef<MediaStream | null>(null);
+  const sharedMediaFrameRef = useRef<number | null>(null);
+  const sharedMediaUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     void fetchActiveStreams();
@@ -509,6 +548,19 @@ export default function LiveStream() {
   }, [recentMediaState, resolvedStreamId]);
 
   useEffect(() => {
+    if (!recentPromotion || recentPromotion.streamId !== resolvedStreamId) {
+      return;
+    }
+
+    setActivePromotion(recentPromotion);
+    const timeout = window.setTimeout(() => {
+      setActivePromotion((current) => (current?.postId === recentPromotion.postId ? null : current));
+    }, recentPromotion.durationSeconds * 1000);
+
+    return () => window.clearTimeout(timeout);
+  }, [recentPromotion, resolvedStreamId]);
+
+  useEffect(() => {
     if (!recentParticipantRemoved || recentParticipantRemoved.streamId !== resolvedStreamId) {
       return;
     }
@@ -520,6 +572,7 @@ export default function LiveStream() {
     });
 
     if (recentParticipantRemoved.removedUserId === user?._id) {
+      void stopSharedFilePlayback();
       livekitRoomRef.current?.disconnect();
       livekitRoomRef.current = null;
       setLiveParticipants({});
@@ -553,6 +606,7 @@ export default function LiveStream() {
 
     livekitRoomRef.current?.disconnect();
     livekitRoomRef.current = null;
+    void stopSharedFilePlayback();
     setLiveParticipants({});
     setVideoTiles([]);
     setAudioTracks([]);
@@ -893,6 +947,7 @@ export default function LiveStream() {
 
     return () => {
       disposed = true;
+      void stopSharedFilePlayback();
       setLiveParticipants({});
       setVideoTiles([]);
       setAudioTracks([]);
@@ -935,6 +990,7 @@ export default function LiveStream() {
         window.clearTimeout(autoReconnectTimeoutRef.current);
       }
       mediaRecorderRef.current?.stop();
+      void stopSharedFilePlayback();
     };
   }, []);
 
@@ -1188,6 +1244,7 @@ export default function LiveStream() {
     try {
       setIsSubmitting(true);
       await leaveStreamParticipation(resolvedStreamId);
+      await stopSharedFilePlayback();
       livekitRoomRef.current?.disconnect();
       livekitRoomRef.current = null;
       toast.success(isInvitedPending ? 'Live invite declined.' : 'You left the live.');
@@ -1217,6 +1274,21 @@ export default function LiveStream() {
     });
   };
 
+  const getLocalCameraTrack = () => {
+    const room = livekitRoomRef.current;
+    if (!room) {
+      return null;
+    }
+
+    const publication = (Array.from(
+      room.localParticipant.videoTrackPublications.values(),
+    ) as LocalTrackPublication[]).find(
+      (entry) => entry.source === Track.Source.Camera && entry.track,
+    );
+
+    return (publication?.videoTrack as LocalVideoTrack | undefined) ?? null;
+  };
+
   const handleToggleCamera = async () => {
     const room = livekitRoomRef.current;
     if (!room || !resolvedStreamId || !isParticipantView) {
@@ -1232,6 +1304,71 @@ export default function LiveStream() {
     });
   };
 
+  const stopSharedFilePlayback = async () => {
+    const room = livekitRoomRef.current;
+    const sharedTrack = sharedMediaTrackRef.current;
+
+    if (sharedMediaFrameRef.current) {
+      window.cancelAnimationFrame(sharedMediaFrameRef.current);
+      sharedMediaFrameRef.current = null;
+    }
+
+    if (room && sharedTrack) {
+      try {
+        await room.localParticipant.unpublishTrack(sharedTrack);
+      } catch {}
+    }
+
+    sharedTrack?.stop();
+    sharedMediaTrackRef.current = null;
+    sharedMediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    sharedMediaStreamRef.current = null;
+
+    if (sharedMediaElementRef.current instanceof HTMLVideoElement) {
+      sharedMediaElementRef.current.pause();
+      sharedMediaElementRef.current.src = '';
+    }
+
+    sharedMediaElementRef.current = null;
+    sharedMediaCanvasRef.current = null;
+
+    if (sharedMediaUrlRef.current) {
+      URL.revokeObjectURL(sharedMediaUrlRef.current);
+      sharedMediaUrlRef.current = null;
+    }
+
+    setSharingFileName(null);
+  };
+
+  const handleSwitchCamera = async () => {
+    if (!isParticipantView) {
+      return;
+    }
+
+    const localCameraTrack = getLocalCameraTrack();
+    if (!localCameraTrack) {
+      toast.info('Turn your camera on before switching lenses.');
+      return;
+    }
+
+    const nextFacingMode: CameraFacingMode = cameraFacingMode === 'user' ? 'environment' : 'user';
+
+    try {
+      await localCameraTrack.restartTrack({ facingMode: nextFacingMode });
+      setCameraFacingMode(nextFacingMode);
+      setIsCameraPaused(false);
+      if (resolvedStreamId) {
+        updateMediaState(resolvedStreamId, {
+          isMuted: isMicMuted,
+          isCameraOff: false,
+        });
+      }
+      toast.success(nextFacingMode === 'environment' ? 'Back camera enabled.' : 'Front camera enabled.');
+    } catch (err: any) {
+      toast.error(err?.message ?? 'Unable to switch camera.');
+    }
+  };
+
   const handleToggleScreenShare = async () => {
     const room = livekitRoomRef.current;
     if (!room || !resolvedStreamId || !isParticipantView) {
@@ -1239,6 +1376,15 @@ export default function LiveStream() {
     }
 
     try {
+      if (!isScreenSharing && isProbablyMobileDevice()) {
+        toast.info('Screen sharing is available on laptop or desktop only. Use file share on mobile instead.');
+        return;
+      }
+
+      if (sharingFileName) {
+        await stopSharedFilePlayback();
+      }
+
       const nextEnabled = !isScreenSharing;
       await room.localParticipant.setScreenShareEnabled(nextEnabled, {
         audio: true,
@@ -1256,6 +1402,128 @@ export default function LiveStream() {
           : err?.message ?? 'Unable to update screen sharing.',
       );
     }
+  };
+
+  const startFileShare = async (file: File) => {
+    const room = livekitRoomRef.current;
+    if (!room || !resolvedStreamId || !isParticipantView) {
+      return;
+    }
+
+    await stopSharedFilePlayback();
+    if (isScreenSharing) {
+      await room.localParticipant.setScreenShareEnabled(false);
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    sharedMediaUrlRef.current = objectUrl;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    sharedMediaCanvasRef.current = canvas;
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('Unable to prepare file sharing surface.');
+    }
+
+    const streamFromCanvas = canvas.captureStream(file.type.startsWith('video/') ? 24 : 12);
+    const mediaTrack = streamFromCanvas.getVideoTracks()[0];
+    if (!mediaTrack) {
+      throw new Error('Unable to create a sharable video track from this file.');
+    }
+
+    const drawFallback = () => {
+      context.fillStyle = '#050505';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    };
+
+    const drawFrame = () => {
+      drawFallback();
+      const element = sharedMediaElementRef.current;
+      if (!element) {
+        return;
+      }
+
+      const sourceWidth =
+        element instanceof HTMLVideoElement ? element.videoWidth || canvas.width : element.naturalWidth || canvas.width;
+      const sourceHeight =
+        element instanceof HTMLVideoElement ? element.videoHeight || canvas.height : element.naturalHeight || canvas.height;
+      const scale = Math.min(canvas.width / sourceWidth, canvas.height / sourceHeight);
+      const width = sourceWidth * scale;
+      const height = sourceHeight * scale;
+      const x = (canvas.width - width) / 2;
+      const y = (canvas.height - height) / 2;
+
+      context.drawImage(element, x, y, width, height);
+    };
+
+    const renderLoop = () => {
+      drawFrame();
+      sharedMediaFrameRef.current = window.requestAnimationFrame(renderLoop);
+    };
+
+    if (file.type.startsWith('video/')) {
+      const video = document.createElement('video');
+      video.src = objectUrl;
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      await video.play();
+      sharedMediaElementRef.current = video;
+      renderLoop();
+    } else if (file.type.startsWith('image/')) {
+      const image = new Image();
+      image.src = objectUrl;
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error('Unable to open this image.'));
+      });
+      sharedMediaElementRef.current = image;
+      renderLoop();
+    } else {
+      throw new Error('Choose an image or video file to share.');
+    }
+
+    await room.localParticipant.publishTrack(mediaTrack, {
+      source: Track.Source.ScreenShare,
+      name: `file-share-${Date.now()}`,
+    });
+
+    sharedMediaTrackRef.current = mediaTrack;
+    sharedMediaStreamRef.current = streamFromCanvas;
+    setSharingFileName(file.name);
+
+    if (isHostView && stream?.orientation === 'vertical') {
+      await updateStreamLayout(resolvedStreamId, 'pip');
+    }
+
+    toast.success(`${file.name} is now showing to viewers.`);
+  };
+
+  const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      await startFileShare(file);
+    } catch (err: any) {
+      await stopSharedFilePlayback();
+      toast.error(err?.message ?? 'Unable to share this file.');
+    }
+  };
+
+  const handleOpenFilePicker = () => {
+    if (!isParticipantView) {
+      return;
+    }
+
+    fileShareInputRef.current?.click();
   };
 
   const handleRemoveParticipant = async (participantUserId: string, participantUsername: string) => {
@@ -1299,6 +1567,7 @@ export default function LiveStream() {
       setLiveParticipants({});
       setVideoTiles([]);
       setAudioTracks([]);
+      await stopSharedFilePlayback();
       livekitRoomRef.current?.disconnect();
       livekitRoomRef.current = null;
       disconnect();
@@ -1476,6 +1745,7 @@ export default function LiveStream() {
       if (isRecording) {
         await stopRecording();
       }
+      await stopSharedFilePlayback();
       await stopStream(resolvedStreamId);
       toast.success('Your stream has ended.', { title: 'Stream Ended' });
       navigate('/history');
@@ -1511,7 +1781,9 @@ export default function LiveStream() {
     setStartForm((current) => ({ ...current, [field]: value }));
   };
 
-  const handleChangeOrientation = async (orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only') => {
+  const handleChangeOrientation = async (
+    orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only' | 'grid' | 'host-focus',
+  ) => {
     if (!resolvedStreamId || !isHostView) {
       return;
     }
@@ -1737,7 +2009,11 @@ export default function LiveStream() {
           activeParticipant={activeParticipant}
           onBack={() => navigate(-1)}
           onClose={() => navigate('/home')}
-          onOpenControlSheet={() => setShowControlSheet(true)}
+          onOpenControlSheet={() => {
+            if (isParticipantView) {
+              setShowControlSheet(true);
+            }
+          }}
           onOpenRequests={() => setIsInviting(true)}
           onFollowHost={() => void handleFollowHost()}
           onShare={() => void handleShare()}
@@ -1761,6 +2037,57 @@ export default function LiveStream() {
               <p className="mt-1.5 text-xs font-black uppercase italic text-white sm:mt-2 sm:text-base">
                 {giftTicker}
               </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {activePromotion && (
+            <motion.div
+              key={`${activePromotion.postId}-${activePromotion.shownByUserId}`}
+              initial={{ opacity: 0, y: -14, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.98 }}
+              className="absolute inset-x-3 top-24 z-35 flex justify-center sm:inset-x-6 sm:top-32 lg:inset-x-8"
+            >
+              <div className="w-full max-w-2xl rounded-[2rem] border border-white/10 bg-[#0e0b1f]/92 p-3 shadow-2xl backdrop-blur-xl sm:p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[8px] font-black uppercase tracking-[0.2em] text-brand-accent">Promoted In Stream</p>
+                    <p className="mt-1 text-xs font-black uppercase italic text-white sm:text-sm">
+                      @{activePromotion.shownByUsername}
+                    </p>
+                  </div>
+                  <a
+                    href={activePromotion.linkUrl}
+                    target={activePromotion.linkUrl.startsWith('http') ? '_blank' : undefined}
+                    rel={activePromotion.linkUrl.startsWith('http') ? 'noreferrer' : undefined}
+                    className="rounded-full bg-brand-primary px-3 py-2 text-[9px] font-black uppercase tracking-[0.14em] text-white"
+                  >
+                    {activePromotion.linkLabel}
+                  </a>
+                </div>
+                {activePromotion.mediaType === 'video' ? (
+                  <video
+                    src={activePromotion.mediaUrl}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="mt-3 aspect-video w-full rounded-[1.5rem] bg-black object-cover"
+                  />
+                ) : (
+                  <img
+                    src={activePromotion.mediaUrl}
+                    alt={activePromotion.content || 'Promoted post'}
+                    className="mt-3 aspect-video w-full rounded-[1.5rem] object-cover"
+                  />
+                )}
+                {activePromotion.content ? (
+                  <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-zinc-300 sm:text-sm">
+                    {activePromotion.content}
+                  </p>
+                ) : null}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1979,18 +2306,23 @@ export default function LiveStream() {
           }}
           onAcceptInvite={() => void handleAcceptInvite()}
           onDeclineInvite={() => void handleLeaveLive()}
-          onOpenControls={() => setShowControlSheet(true)}
+          onOpenControls={() => {
+            if (isParticipantView) {
+              setShowControlSheet(true);
+            }
+          }}
           canOpenControls={isParticipantView}
         />
 
         <StreamControlSheet
-          open={showControlSheet}
+          open={showControlSheet && isParticipantView}
           stream={stream}
           isHostView={isHostView}
           isCoStreamerView={isCoStreamerView}
           isPledgeStream={isPledgeStream}
           canRespondToClaim={canRespondToClaim}
           canClaimPledge={canMakePledgeClaim}
+          canChangeOrientation={isHostView}
           pendingClaimLabel={
             pendingClaim
               ? `${pendingClaim.claimedByUsername} claimed ${pendingClaim.outcome}${pendingClaim.note ? ` · ${pendingClaim.note}` : ''}`
@@ -2001,10 +2333,13 @@ export default function LiveStream() {
           isScreenSharing={isScreenSharing}
           isRecording={isRecording}
           isSavingRecording={isSavingRecording}
+          hasSharedFile={Boolean(sharingFileName)}
           onClose={() => setShowControlSheet(false)}
           onToggleMute={() => void handleToggleMute()}
           onToggleCamera={() => void handleToggleCamera()}
+          onSwitchCamera={() => void handleSwitchCamera()}
           onToggleScreenShare={() => void handleToggleScreenShare()}
+          onShareFile={() => handleOpenFilePicker()}
           onToggleRecording={() => void toggleRecording()}
           onOpenInviteModal={() => setIsInviting(true)}
           onLeaveLive={() => void handleLeaveLive()}
@@ -2085,6 +2420,16 @@ export default function LiveStream() {
         }}
         onShareToFollowers={() => {
           void handleShareToFollowers();
+        }}
+      />
+
+      <input
+        ref={fileShareInputRef}
+        type="file"
+        accept="image/*,video/*"
+        className="hidden"
+        onChange={(event) => {
+          void handleFileSelection(event);
         }}
       />
     </div>

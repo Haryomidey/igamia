@@ -79,6 +79,7 @@ export class StreamsController {
     @Body() dto: StartStreamDto,
   ) {
     return this.streamsService.startStream(user.sub, user.username, dto).then(async (stream) => {
+      this.streamsGateway.startAutomaticPromotions(stream._id.toString());
       const followerIds = await this.streamsService.getFollowerIds(user.sub);
       this.streamsGateway.emitFollowerLiveNotification(followerIds, {
         streamId: stream._id.toString(),
@@ -94,6 +95,7 @@ export class StreamsController {
   @Post(':streamId/stop')
   async stopStream(@Param('streamId') streamId: string, @CurrentUser() user: { sub: string }) {
     const stream = await this.streamsService.stopStream(streamId, user.sub);
+    this.streamsGateway.stopAutomaticPromotions(streamId);
     this.streamsGateway.emitStreamStopped(streamId, {
       _id: stream._id.toString(),
       status: stream.status,
@@ -365,6 +367,18 @@ export class StreamsController {
       earningsNgn: result.earningsNgn,
     });
     return result;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':streamId/promote-post')
+  async promotePostInStream(
+    @Param('streamId') streamId: string,
+    @CurrentUser() user: { sub: string },
+    @Body() body: { postId: string; durationSeconds?: number },
+  ) {
+    const payload = await this.streamsService.showPromotedPost(streamId, user.sub, body);
+    this.streamsGateway.emitStreamPromotion(streamId, payload);
+    return { message: 'Promoted post is now showing in the stream', promotion: payload };
   }
 
   @UseGuards(JwtAuthGuard)

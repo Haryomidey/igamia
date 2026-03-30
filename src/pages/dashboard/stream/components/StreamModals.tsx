@@ -7,7 +7,7 @@ type StartForm = {
   title: string;
   description: string;
   category: string;
-  orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only';
+  orientation: 'vertical' | 'horizontal' | 'pip' | 'screen-only' | 'grid' | 'host-focus';
 };
 
 export function StartStreamModal({
@@ -53,8 +53,8 @@ export function StartStreamModal({
                 placeholder="Category"
                 className="w-full rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-white focus:border-brand-primary/50 focus:outline-none"
               />
-              <div className="grid grid-cols-3 gap-3">
-                {(['vertical', 'horizontal', 'pip'] as const).map((orientation) => (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {(['vertical', 'horizontal', 'pip', 'grid', 'host-focus'] as const).map((orientation) => (
                   <button
                     key={orientation}
                     type="button"
@@ -65,7 +65,7 @@ export function StartStreamModal({
                         : 'border border-white/10 bg-black/30 text-zinc-300'
                     }`}
                   >
-                    {orientation === 'pip' ? 'PiP' : orientation}
+                    {orientation === 'pip' ? 'PiP' : orientation === 'host-focus' ? 'Host Focus' : orientation}
                   </button>
                 ))}
               </div>
@@ -506,6 +506,86 @@ export function ShareStreamModal({
               )}
             </div>
           </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function PromotePostModal({
+  open,
+  posts,
+  promotingPostId,
+  onClose,
+  onPromote,
+}: {
+  open: boolean;
+  posts: Array<{
+    _id: string;
+    content: string;
+    mediaUrl: string;
+    mediaType: 'image' | 'video';
+    boost?: { linkUrl?: string };
+  }>;
+  promotingPostId: string | null;
+  onClose: () => void;
+  onPromote: (postId: string) => void;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <div className="fixed inset-0 z-[120] bg-[#0f0b21]/88 p-4 backdrop-blur-md">
+          <div className="flex min-h-full items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              className="w-full max-w-3xl rounded-[2.5rem] border border-white/10 bg-[#171330] p-6 shadow-2xl sm:p-8"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] text-brand-accent">Promote In Stream</p>
+                  <h3 className="mt-3 text-xl font-black uppercase italic text-white">Show boosted media to viewers</h3>
+                  <p className="mt-3 text-sm leading-relaxed text-zinc-400">
+                    Only boosted image and video posts appear here. Text-only boosted posts stay in community and post threads.
+                  </p>
+                </div>
+                <button type="button" onClick={onClose} className="rounded-full border border-white/10 bg-white/5 p-3 text-zinc-400">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                {posts.length ? (
+                  posts.map((post) => (
+                    <div key={post._id} className="rounded-[1.75rem] border border-white/10 bg-black/20 p-4">
+                      {post.mediaType === 'video' ? (
+                        <video src={post.mediaUrl} className="aspect-video w-full rounded-[1.25rem] bg-black object-cover" muted playsInline />
+                      ) : (
+                        <img src={post.mediaUrl} alt={post.content || 'Promoted post'} className="aspect-video w-full rounded-[1.25rem] object-cover" />
+                      )}
+                      <p className="mt-3 line-clamp-2 text-sm text-zinc-300">{post.content || 'Media post ready for viewers.'}</p>
+                      <p className="mt-2 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                        {post.boost?.linkUrl ? 'External link will be shown' : 'Post link will be shown'}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => onPromote(post._id)}
+                        disabled={promotingPostId === post._id}
+                        className="mt-4 inline-flex w-full items-center justify-center rounded-[1.25rem] bg-brand-primary px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white disabled:opacity-50"
+                      >
+                        {promotingPostId === post._id ? 'Showing...' : 'Show To Viewers'}
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-[1.75rem] border border-white/10 bg-black/20 px-5 py-10 text-center text-sm text-zinc-500 sm:col-span-2">
+                    No boosted image or video posts are ready yet.
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
         </div>
       )}
     </AnimatePresence>

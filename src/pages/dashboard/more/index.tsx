@@ -21,10 +21,19 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../hooks/useAuth';
 
+type MenuCard = {
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  title: string;
+  desc: string;
+  color: string;
+  path: string;
+  action?: 'logout';
+};
+
 export default function More() {
   const navigate = useNavigate();
   const { logout } = useAuth();
-  const mobilePages = [
+  const mobilePages: MenuCard[] = [
     { icon: Home, title: 'Home', desc: 'Jump back to your dashboard overview and quick actions.', color: 'text-brand-primary', path: '/home' },
     { icon: Gamepad2, title: 'Game Library', desc: 'Browse games and create or join active pledges.', color: 'text-white', path: '/library' },
     { icon: History, title: 'History', desc: 'See recorded streams and recent live activity.', color: 'text-zinc-300', path: '/history' },
@@ -34,7 +43,7 @@ export default function More() {
     { icon: Users, title: 'Community', desc: 'Open the social feed, discover people, and connect.', color: 'text-sky-400', path: '/social' },
   ];
 
-  const menuItems = [
+  const menuItems: MenuCard[] = [
     { icon: User, title: 'User Profile', desc: 'View your gaming stats, achievements, and personal information.', color: 'text-brand-primary', path: '/profile' },
     { icon: Trophy, title: 'Leaderboard', desc: 'Check your ranking and see how you stack up against the best gamers.', color: 'text-brand-accent', path: '/leaderboard' },
     { icon: Share2, title: 'Refer & Earn', path: '/refer', desc: 'Invite your friends to iGamia and earn massive rewards together.', color: 'text-emerald-500' },
